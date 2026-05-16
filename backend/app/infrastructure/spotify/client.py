@@ -131,3 +131,76 @@ class SpotifyClient:
             )
             response.raise_for_status()
             return response.json()
+    
+    async def search_tracks(self, access_token: str, query: str, limit: int = 20) -> list[dict]:
+        """Search for tracks"""
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.BASE_URL}/search",
+                headers={"Authorization": f"Bearer {access_token}"},
+                params={
+                    "q": query,
+                    "type": "track",
+                    "limit": limit,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            # Return simplified track data
+            return [
+                {
+                    "id": track["id"],
+                    "name": track["name"],
+                    "artist": ", ".join([a["name"] for a in track.get("artists", [])]),
+                    "album": track.get("album", {}).get("name", ""),
+                    "image": track.get("album", {}).get("images", [{}])[0].get("url"),
+                    "duration_ms": track.get("duration_ms", 0),
+                    "preview_url": track.get("preview_url"),
+                }
+                for track in data.get("tracks", {}).get("items", [])
+            ]
+    
+    async def get_track(self, access_token: str, track_id: str) -> dict:
+        """Get track details by ID"""
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.BASE_URL}/tracks/{track_id}",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            response.raise_for_status()
+            track = response.json()
+            return {
+                "id": track["id"],
+                "name": track["name"],
+                "artist": ", ".join([a["name"] for a in track.get("artists", [])]),
+                "album": track.get("album", {}).get("name", ""),
+                "image": track.get("album", {}).get("images", [{}])[0].get("url"),
+                "duration_ms": track.get("duration_ms", 0),
+                "preview_url": track.get("preview_url"),
+            }
+    
+    async def create_playlist(self, access_token: str, name: str, description: str = "") -> dict:
+        """Create a playlist for current user"""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.BASE_URL}/me/playlists",
+                headers={"Authorization": f"Bearer {access_token}"},
+                json={
+                    "name": name,
+                    "description": description,
+                    "public": False,
+                },
+            )
+            response.raise_for_status()
+            return response.json()
+    
+    async def add_tracks_to_playlist(self, access_token: str, playlist_id: str, track_ids: list[str]) -> dict:
+        """Add tracks to a playlist"""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.BASE_URL}/playlists/{playlist_id}/items",
+                headers={"Authorization": f"Bearer {access_token}"},
+                json={"uris": [f"spotify:track:{track_id}" for track_id in track_ids]},
+            )
+            response.raise_for_status()
+            return response.json()

@@ -7,8 +7,10 @@ from app.interfaces.schemas import (
     HealthResponse,
     PlaylistCreate,
     PlaylistResponse,
+    PlaylistTrackResponse,
     UserResponse,
 )
+from app.interfaces.http.auth_routes import get_current_user_id
 import uuid
 
 router = APIRouter()
@@ -32,24 +34,33 @@ async def health_check(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/api/playlists", response_model=list[PlaylistResponse])
-async def list_playlists(db: AsyncSession = Depends(get_db)):
-    """List all playlists (MVP - no auth)"""
-    result = await db.execute(select(PlaylistModel))
-    playlists = result.scalars().all()
+async def list_playlists(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """List playlists for current user (owned or collaborated)"""
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(PlaylistModel)
+        .where(PlaylistModel.owner_id == user_id)
+        .options(selectinload(PlaylistModel.tracks))
+    )
+    playlists = result.unique().scalars().all()
     return playlists
 
 
 @router.post("/api/playlists", response_model=PlaylistResponse)
 async def create_playlist(
     playlist: PlaylistCreate,
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new playlist (MVP - no auth, hardcoded owner)"""
+    """Create a new playlist"""
     new_playlist = PlaylistModel(
         id=str(uuid.uuid4()),
         name=playlist.name,
         description=playlist.description,
-        owner_id="test-user-1",  # MVP hardcoded
+        owner_id=user_id,
         snapshot_id=str(uuid.uuid4()),
     )
     db.add(new_playlist)
@@ -76,6 +87,29 @@ async def get_playlist(
         )
     
     return playlist
+
+
+@router.get("/api/playlists/{playlist_id}/tracks", response_model=list[PlaylistTrackResponse])
+async def get_playlist_tracks(
+    playlist_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get tracks for a playlist"""
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(PlaylistModel)
+        .where(PlaylistModel.id == playlist_id)
+        .options(selectinload(PlaylistModel.tracks))
+    )
+    playlist = result.unique().scalar_one_or_none()
+    
+    if not playlist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Playlist not found"
+        )
+    
+    return playlist.tracks or []
 
 
 @router.get("/api/test-data")

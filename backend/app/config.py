@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # Spotify API
     SPOTIFY_CLIENT_ID: str = "28cd22a51fff4f499901583a60f5a937"
     SPOTIFY_CLIENT_SECRET: str = "46a4a05fab674c0d81e32f6d21b3955b"
-    SPOTIFY_REDIRECT_URI: str = "http://localhost:8000/api/auth/spotify/callback"
+    SPOTIFY_REDIRECT_URI: str = "http://127.0.0.1:8000/api/spotify/callback"
     
     # App
     DEBUG: bool = True

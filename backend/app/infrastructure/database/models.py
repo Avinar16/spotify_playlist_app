@@ -41,6 +41,7 @@ class PlaylistModel(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     owner_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+    spotify_id = Column(String(255), nullable=True, unique=True, index=True)  # Spotify playlist ID
     snapshot_id = Column(String(255), nullable=True)  # For collaborative editing
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -60,6 +61,9 @@ class PlaylistTrackModel(Base):
     id = Column(String(36), primary_key=True)
     playlist_id = Column(String(36), ForeignKey('playlists.id'), nullable=False, index=True)
     spotify_track_id = Column(String(255), nullable=False)
+    track_name = Column(String(255), nullable=True)
+    track_artist = Column(String(255), nullable=True)
+    track_image_url = Column(Text, nullable=True)  # Album cover image
     added_by_id = Column(String(36), ForeignKey('users.id'), nullable=False)
     added_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

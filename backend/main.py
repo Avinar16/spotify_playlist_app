@@ -5,7 +5,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.infrastructure.database.database import init_db, close_db
-from app.interfaces.http.routes import router
+from app.interfaces.http.routes import router as playlist_router
+from app.interfaces.http.auth_routes import router as auth_router
+from app.interfaces.http.spotify_oauth_routes import router as spotify_router
+from app.interfaces.http.playlist_routes import router as playlist_mgmt_router
 
 # Configure logging
 logging.basicConfig(
@@ -58,7 +61,10 @@ app.add_middleware(
 )
 
 # Include routes
-app.include_router(router)
+app.include_router(auth_router)
+app.include_router(spotify_router)
+app.include_router(playlist_mgmt_router)
+app.include_router(playlist_router)
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ class UserResponse(BaseModel):
     email: str
     username: str
     created_at: datetime
+    spotify_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -26,8 +27,18 @@ class UserResponse(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     user: UserResponse
+
+
+class TokenRefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class TokenRefreshResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
 
 
 class PlaylistCreate(BaseModel):
@@ -35,23 +46,27 @@ class PlaylistCreate(BaseModel):
     description: Optional[str] = None
 
 
-class PlaylistResponse(BaseModel):
+class PlaylistTrackResponse(BaseModel):
     id: str
-    name: str
-    description: Optional[str]
-    owner_id: str
-    created_at: datetime
-    updated_at: Optional[datetime]
+    spotify_track_id: str
+    track_name: Optional[str] = None
+    track_artist: Optional[str] = None
+    track_image_url: Optional[str] = None
+    added_by_id: str
+    added_at: datetime
 
     class Config:
         from_attributes = True
 
 
-class PlaylistTrackResponse(BaseModel):
+class PlaylistResponse(BaseModel):
     id: str
-    spotify_track_id: str
-    added_by_id: str
-    added_at: datetime
+    name: str
+    description: Optional[str]
+    owner_id: str
+    spotify_id: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime]
 
     class Config:
         from_attributes = True

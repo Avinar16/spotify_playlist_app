@@ -31,3 +31,18 @@ class AccessDeniedException(DomainException):
 class SpotifyException(DomainException):
     """Spotify API error"""
     pass
+
+
+class AuthenticationError(DomainException):
+    """Authentication error"""
+    pass
+
+
+class SpotifyTokenExpiredError(AuthenticationError):
+    """Spotify access token expired - requires re-authorization"""
+    pass
+
+
+class ValidationError(DomainException):
+    """Validation error"""
+    pass
