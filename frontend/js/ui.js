@@ -333,23 +333,28 @@ export class UI {
     async loadCollaborators(playlistId) {
         try {
             const { api } = await import('./api.js');
-            const collaborators = await api.get(`/playlist/${playlistId}/collaborators`);
+            const members = await api.get(`/playlist/${playlistId}/collaborators`);
             const listDiv = document.getElementById('collaborators-list');
             
-            if (!collaborators || collaborators.length === 0) {
-                listDiv.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 20px;">No collaborators yet</p>';
+            if (!members || members.length === 0) {
+                listDiv.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 20px;">No members yet</p>';
                 return;
             }
             
             listDiv.innerHTML = `
-                <div class="collaborators-header">🤝 Collaborators (${collaborators.length})</div>
-                ${collaborators.map(collab => `
+                <div class="collaborators-header">👥 Members (${members.length})</div>
+                ${members.map(member => `
                     <div class="collaborator-item">
                         <div class="collaborator-info">
-                            <span class="collaborator-name">${this.escapeHtml(collab.username)}</span>
-                            <span class="collaborator-email">${this.escapeHtml(collab.email)}</span>
+                            <div class="collaborator-name-row">
+                                <span class="collaborator-name">${this.escapeHtml(member.username)}</span>
+                                ${member.is_owner ? '<span class="owner-badge">👑 Owner</span>' : ''}
+                            </div>
+                            <span class="collaborator-email">${this.escapeHtml(member.email)}</span>
                         </div>
-                        <button class="btn-remove-collab" data-action="remove-collaborator" data-user-id="${collab.id}" data-playlist-id="${playlistId}">✕</button>
+                        ${!member.is_owner ? `
+                            <button class="btn-remove-collab" data-action="remove-collaborator" data-user-id="${member.id}" data-playlist-id="${playlistId}">✕</button>
+                        ` : ''}
                     </div>
                 `).join('')}
             `;

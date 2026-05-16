@@ -17,21 +17,38 @@ class PlaylistRepository:
         self.db = db
     
     async def get_by_id(self, playlist_id: str) -> Optional[PlaylistModel]:
-        """Get playlist by ID with tracks"""
+        """Get playlist by ID with tracks and collaborators"""
         stmt = (
             select(PlaylistModel)
             .where(PlaylistModel.id == playlist_id)
-            .options(selectinload(PlaylistModel.tracks))
+            .options(
+                selectinload(PlaylistModel.tracks),
+                selectinload(PlaylistModel.collaborators)
+            )
         )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
     
     async def get_by_user_id(self, user_id: str) -> List[PlaylistModel]:
-        """Get all playlists for a user"""
+        """Get all playlists for a user (both owned and collaborated)"""
+        from sqlalchemy import or_, join
+        from app.infrastructure.database.models import playlist_collaborators
+        
+        # Query for playlists where user is owner OR collaborator
         stmt = (
             select(PlaylistModel)
-            .where(PlaylistModel.owner_id == user_id)
+            .where(
+                or_(
+                    PlaylistModel.owner_id == user_id,
+                    PlaylistModel.id.in_(
+                        select(playlist_collaborators.c.playlist_id).where(
+                            playlist_collaborators.c.user_id == user_id
+                        )
+                    )
+                )
+            )
             .options(selectinload(PlaylistModel.tracks))
+            .distinct()
         )
         result = await self.db.execute(stmt)
         return result.scalars().all()
@@ -103,7 +120,15 @@ class PlaylistRepository:
     
     async def add_collaborator(self, playlist_id: str, user_id: str) -> bool:
         """Add collaborator to playlist"""
-        playlist = await self.get_by_id(playlist_id)
+        # Fetch playlist with eager-loaded collaborators
+        stmt = (
+            select(PlaylistModel)
+            .where(PlaylistModel.id == playlist_id)
+            .options(selectinload(PlaylistModel.collaborators))
+        )
+        result = await self.db.execute(stmt)
+        playlist = result.scalar_one_or_none()
+        
         if not playlist:
             return False
         
@@ -123,7 +148,15 @@ class PlaylistRepository:
     
     async def remove_collaborator(self, playlist_id: str, user_id: str) -> bool:
         """Remove collaborator from playlist"""
-        playlist = await self.get_by_id(playlist_id)
+        # Fetch playlist with eager-loaded collaborators
+        stmt = (
+            select(PlaylistModel)
+            .where(PlaylistModel.id == playlist_id)
+            .options(selectinload(PlaylistModel.collaborators))
+        )
+        result = await self.db.execute(stmt)
+        playlist = result.scalar_one_or_none()
+        
         if not playlist:
             return False
         

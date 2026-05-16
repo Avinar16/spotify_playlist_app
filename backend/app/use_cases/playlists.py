@@ -7,6 +7,13 @@ from app.core.exceptions import ValidationError, AuthenticationError
 logger = logging.getLogger(__name__)
 
 
+def check_playlist_access(playlist, user_id: str) -> bool:
+    """Check if user has access to playlist (owner or collaborator)"""
+    if playlist.owner_id == user_id:
+        return True
+    return any(collab.id == user_id for collab in playlist.collaborators)
+
+
 class SearchTracksUseCase:
     """Search for tracks in Spotify"""
     
@@ -65,7 +72,7 @@ class AddTrackToPlaylistUseCase:
         if not playlist:
             raise ValidationError("Playlist not found")
         
-        if playlist.owner_id != user_id:
+        if not check_playlist_access(playlist, user_id):
             raise AuthenticationError("You don't have permission to modify this playlist")
         
         # Get track details if spotify_client is provided
@@ -181,7 +188,7 @@ class SyncTracksToSpotifyUseCase:
             if not playlist:
                 raise ValidationError("Playlist not found")
             
-            if playlist.owner_id != user_id:
+            if not check_playlist_access(playlist, user_id):
                 raise AuthenticationError("You don't have permission to modify this playlist")
             
             if not playlist.spotify_id:
@@ -278,25 +285,43 @@ class GetPlaylistCollaboratorsUseCase:
         self.user_repository = user_repository
     
     async def execute(self, user_id: str, playlist_id: str) -> List[Dict[str, Any]]:
-        """Get collaborators for playlist"""
+        """Get collaborators for playlist (including owner)"""
         # Check playlist exists and user has access
         playlist = await self.playlist_repository.get_by_id(playlist_id)
         if not playlist:
             raise ValidationError("Playlist not found")
         
-        if playlist.owner_id != user_id and user_id not in [c.id for c in playlist.collaborators]:
+        if not check_playlist_access(playlist, user_id):
             raise AuthenticationError("You don't have access to this playlist")
         
+        # Get owner
+        owner = await self.user_repository.get_by_id(playlist.owner_id)
+        
+        # Get other collaborators
         collaborators = await self.playlist_repository.get_collaborators(playlist_id)
         
-        return [
-            {
+        # Combine owner with collaborators
+        all_members = []
+        
+        # Add owner first
+        if owner:
+            all_members.append({
+                "id": owner.id,
+                "username": owner.username,
+                "email": owner.email,
+                "is_owner": True
+            })
+        
+        # Add collaborators
+        for collab in collaborators:
+            all_members.append({
                 "id": collab.id,
                 "username": collab.username,
-                "email": collab.email
-            }
-            for collab in collaborators
-        ]
+                "email": collab.email,
+                "is_owner": False
+            })
+        
+        return all_members
 
 
 class RemoveCollaboratorUseCase:

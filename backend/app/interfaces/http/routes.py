@@ -39,13 +39,10 @@ async def list_playlists(
     db: AsyncSession = Depends(get_db)
 ):
     """List playlists for current user (owned or collaborated)"""
-    from sqlalchemy.orm import selectinload
-    result = await db.execute(
-        select(PlaylistModel)
-        .where(PlaylistModel.owner_id == user_id)
-        .options(selectinload(PlaylistModel.tracks))
-    )
-    playlists = result.unique().scalars().all()
+    from app.infrastructure.database.playlist_repository import PlaylistRepository
+    
+    playlist_repository = PlaylistRepository(db)
+    playlists = await playlist_repository.get_by_user_id(user_id)
     return playlists
 
 
