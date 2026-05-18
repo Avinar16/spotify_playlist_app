@@ -489,7 +489,7 @@ class DeletePlaylistUseCase:
 
         # Delete playlist
         success = await self.playlist_repository.delete(playlist_id)
-        
+
         return {"status": "success", "deleted_playlist_id": playlist_id}
 
 
