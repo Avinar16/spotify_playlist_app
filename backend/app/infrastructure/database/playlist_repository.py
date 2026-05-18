@@ -83,7 +83,8 @@ class PlaylistRepository:
         added_by_id: str,
         track_name: str = None,
         track_artist: str = None,
-        track_image_url: str = None
+        track_image_url: str = None,
+        track_genres: str = None
     ) -> PlaylistTrackModel:
         """Add track to playlist"""
         track = PlaylistTrackModel(
@@ -93,7 +94,8 @@ class PlaylistRepository:
             added_by_id=added_by_id,
             track_name=track_name,
             track_artist=track_artist,
-            track_image_url=track_image_url
+            track_image_url=track_image_url,
+            track_genres=track_genres
         )
         self.db.add(track)
         await self.db.commit()
@@ -184,3 +186,16 @@ class PlaylistRepository:
         result = await self.db.execute(stmt)
         playlist = result.scalar_one_or_none()
         return playlist.collaborators if playlist else []
+    
+    async def delete(self, playlist_id: str) -> bool:
+        """Delete entire playlist"""
+        stmt = select(PlaylistModel).where(PlaylistModel.id == playlist_id)
+        result = await self.db.execute(stmt)
+        playlist = result.scalar_one_or_none()
+        
+        if playlist:
+            await self.db.delete(playlist)
+            await self.db.commit()
+            return True
+        return False
+

@@ -1,5 +1,7 @@
 """Playlist management use cases"""
 import logging
+import hashlib
+import json
 from typing import Optional, List, Dict, Any
 from uuid import uuid4
 from app.core.exceptions import ValidationError, AuthenticationError
@@ -79,6 +81,7 @@ class AddTrackToPlaylistUseCase:
         track_name = None
         track_artist = None
         track_image_url = None
+        track_genres = None
         
         if self.spotify_client:
             try:
@@ -88,6 +91,10 @@ class AddTrackToPlaylistUseCase:
                     track_name = track_info.get("name")
                     track_artist = track_info.get("artist")
                     track_image_url = track_info.get("image")
+                    # Store genres as JSON string
+                    genres = track_info.get("genres", [])
+                    if genres:
+                        track_genres = json.dumps(genres)
             except Exception as e:
                 logger.warning(f"Could not fetch track details: {str(e)}")
         
@@ -99,7 +106,8 @@ class AddTrackToPlaylistUseCase:
                 added_by_id=user_id,
                 track_name=track_name,
                 track_artist=track_artist,
-                track_image_url=track_image_url
+                track_image_url=track_image_url,
+                track_genres=track_genres
             )
             return {
                 "id": track.id,
@@ -107,6 +115,7 @@ class AddTrackToPlaylistUseCase:
                 "track_name": track.track_name,
                 "track_artist": track.track_artist,
                 "track_image_url": track.track_image_url,
+                "track_genres": json.loads(track.track_genres) if track.track_genres else [],
                 "added_at": track.added_at.isoformat()
             }
         except Exception as e:
@@ -352,3 +361,139 @@ class RemoveCollaboratorUseCase:
             raise ValidationError("Failed to remove collaborator")
         
         return {"status": "success", "removed_user_id": collaborator_id}
+
+
+class GetPlaylistStateUseCase:
+    """Get playlist state with snapshot_id for real-time sync"""
+    
+    def __init__(self, playlist_repository):
+        self.playlist_repository = playlist_repository
+    
+    def _generate_snapshot_id(self, playlist) -> str:
+        """Generate hash of playlist state for change detection"""
+        state_data = {
+            "id": playlist.id,
+            "name": playlist.name,
+            "description": playlist.description,
+            "tracks": [
+                {"id": t.id, "spotify_id": t.spotify_track_id}
+                for t in (playlist.tracks or [])
+            ]
+        }
+        state_json = json.dumps(state_data, sort_keys=True)
+        return hashlib.sha256(state_json.encode()).hexdigest()[:16]
+    
+    async def execute(
+        self, 
+        user_id: str,
+        playlist_id: str,
+        last_snapshot_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get playlist state, optionally only if changed from last_snapshot_id"""
+        # Check playlist exists and user has access
+        playlist = await self.playlist_repository.get_by_id(playlist_id)
+        if not playlist:
+            raise ValidationError("Playlist not found")
+        
+        if not check_playlist_access(playlist, user_id):
+            raise AuthenticationError("You don't have access to this playlist")
+        
+        # Generate current snapshot
+        current_snapshot_id = self._generate_snapshot_id(playlist)
+        
+        # If client has same snapshot, return minimal response
+        if last_snapshot_id and last_snapshot_id == current_snapshot_id:
+            return {
+                "changed": False,
+                "snapshot_id": current_snapshot_id,
+                "playlist": None
+            }
+        
+        # Return full state if changed or no snapshot provided
+        return {
+            "changed": True,
+            "snapshot_id": current_snapshot_id,
+            "playlist": {
+                "id": playlist.id,
+                "name": playlist.name,
+                "description": playlist.description,
+                "owner_id": playlist.owner_id,
+                "spotify_id": playlist.spotify_id,
+                "tracks": [
+                    {
+                        "id": track.id,
+                        "spotify_track_id": track.spotify_track_id,
+                        "track_name": track.track_name,
+                        "track_artist": track.track_artist,
+                        "track_image_url": track.track_image_url,
+                        "track_genres": json.loads(track.track_genres) if track.track_genres else [],
+                        "added_at": track.added_at.isoformat()
+                    }
+                    for track in (playlist.tracks or [])
+                ]
+            }
+        }
+
+
+class DeleteTrackFromPlaylistUseCase:
+    """Delete track from playlist"""
+    
+    def __init__(self, playlist_repository):
+        self.playlist_repository = playlist_repository
+    
+    async def execute(
+        self,
+        user_id: str,
+        playlist_id: str,
+        track_id: str
+    ) -> Dict[str, Any]:
+        """Delete track from playlist"""
+        # Check playlist exists and user has access
+        playlist = await self.playlist_repository.get_by_id(playlist_id)
+        if not playlist:
+            raise ValidationError("Playlist not found")
+        
+        if not check_playlist_access(playlist, user_id):
+            raise AuthenticationError("You don't have permission to modify this playlist")
+        
+        # Check track exists in playlist
+        track = next((t for t in (playlist.tracks or []) if t.id == track_id), None)
+        if not track:
+            raise ValidationError("Track not found in playlist")
+        
+        # Delete track
+        success = await self.playlist_repository.remove_track(track_id)
+        
+        if not success:
+            raise ValidationError("Failed to remove track")
+        
+        return {"status": "success", "removed_track_id": track_id}
+
+
+class DeletePlaylistUseCase:
+    """Delete entire playlist"""
+    
+    def __init__(self, playlist_repository):
+        self.playlist_repository = playlist_repository
+    
+    async def execute(
+        self,
+        user_id: str,
+        playlist_id: str
+    ) -> Dict[str, Any]:
+        """Delete playlist (only owner can delete)"""
+        # Check playlist exists and user is owner
+        playlist = await self.playlist_repository.get_by_id(playlist_id)
+        if not playlist:
+            raise ValidationError("Playlist not found")
+        
+        if playlist.owner_id != user_id:
+            raise AuthenticationError("Only playlist owner can delete it")
+        
+        # Delete playlist
+        success = await self.playlist_repository.delete(playlist_id)
+        
+        if not success:
+            raise ValidationError("Failed to delete playlist")
+        
+        return {"status": "success", "deleted_playlist_id": playlist_id}

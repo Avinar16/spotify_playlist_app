@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.infrastructure.database.database import get_db
 from app.infrastructure.database.models import UserModel, PlaylistModel
+from app.infrastructure.database.playlist_repository import PlaylistRepository
 from app.interfaces.schemas import (
     HealthResponse,
     PlaylistCreate,
@@ -11,8 +12,13 @@ from app.interfaces.schemas import (
     UserResponse,
 )
 from app.interfaces.http.auth_routes import get_current_user_id
+from app.use_cases.playlists import GetPlaylistStateUseCase, DeleteTrackFromPlaylistUseCase, DeletePlaylistUseCase
+from app.core.exceptions import AuthenticationError, ValidationError
 import uuid
+import logging
+from typing import Optional
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -120,3 +126,110 @@ async def test_data():
             "version": "0.1.0"
         }
     }
+
+
+@router.get("/api/playlists/{playlist_id}/state")
+async def get_playlist_state(
+    playlist_id: str,
+    last_snapshot_id: Optional[str] = None,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get playlist state with snapshot_id for real-time sync"""
+    try:
+        playlist_repository = PlaylistRepository(db)
+        use_case = GetPlaylistStateUseCase(playlist_repository)
+        
+        result = await use_case.execute(
+            user_id=user_id,
+            playlist_id=playlist_id,
+            last_snapshot_id=last_snapshot_id
+        )
+        
+        return result
+    except AuthenticationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e)
+        )
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error in get_playlist_state: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get playlist state"
+        )
+
+
+@router.delete("/api/playlists/{playlist_id}/tracks/{track_id}")
+async def delete_track_from_playlist(
+    playlist_id: str,
+    track_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete track from playlist"""
+    try:
+        playlist_repository = PlaylistRepository(db)
+        use_case = DeleteTrackFromPlaylistUseCase(playlist_repository)
+        
+        result = await use_case.execute(
+            user_id=user_id,
+            playlist_id=playlist_id,
+            track_id=track_id
+        )
+        
+        return result
+    except AuthenticationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e)
+        )
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete track"
+        )
+
+
+@router.delete("/api/playlists/{playlist_id}")
+async def delete_playlist(
+    playlist_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete entire playlist (owner only)"""
+    try:
+        playlist_repository = PlaylistRepository(db)
+        use_case = DeletePlaylistUseCase(playlist_repository)
+        
+        result = await use_case.execute(
+            user_id=user_id,
+            playlist_id=playlist_id
+        )
+        
+        return result
+    except AuthenticationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e)
+        )
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete playlist"
+        )

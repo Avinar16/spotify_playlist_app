@@ -50,6 +50,10 @@ class CreatePlaylistRequest(BaseModel):
 class TrackInPlaylistResponse(BaseModel):
     id: str
     spotify_track_id: str
+    track_name: Optional[str] = None
+    track_artist: Optional[str] = None
+    track_image_url: Optional[str] = None
+    track_genres: Optional[List[str]] = None
     added_at: str
 
 

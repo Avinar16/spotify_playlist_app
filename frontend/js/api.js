@@ -107,6 +107,14 @@ export class APIClient {
         return this.post(`/playlist/${playlistId}/sync-tracks`, {});
     }
 
+    async deleteTrackFromPlaylist(playlistId, trackId) {
+        return this.delete(`/playlists/${playlistId}/tracks/${trackId}`);
+    }
+
+    async deletePlaylist(playlistId) {
+        return this.delete(`/playlists/${playlistId}`);
+    }
+
     // Health check
     async healthCheck() {
         return this.get('/health');
@@ -115,6 +123,15 @@ export class APIClient {
     // Get current user
     async getCurrentUser() {
         return this.get('/auth/me');
+    }
+
+    // User preferences (genres)
+    async getUserGenres() {
+        return this.get('/user/genres');
+    }
+
+    async refreshUserGenres() {
+        return this.post('/user/genres/refresh', {});
     }
 
     // Test endpoint

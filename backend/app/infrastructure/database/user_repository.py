@@ -77,3 +77,21 @@ class UserRepository:
         await self.db.commit()
         await self.db.refresh(user)
         return user
+    
+    async def update(self, user: UserModel) -> UserModel:
+        """Update user record"""
+        await self.db.merge(user)
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user
+    
+    async def update_favorite_genres(self, user_id: str, genres_json: str) -> UserModel:
+        """Update user's favorite genres"""
+        user = await self.get_by_id(user_id)
+        if not user:
+            raise ValueError("User not found")
+        
+        user.favorite_genres = genres_json
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user

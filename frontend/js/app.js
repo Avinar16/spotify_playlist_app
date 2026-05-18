@@ -1,15 +1,19 @@
 import { api } from './api.js';
 import { ui } from './ui.js';
 import * as auth from './auth.js';
+import { createPollingManager } from './polling.js';
 
 class App {
     constructor() {
         this.playlists = [];
+        this.currentlyViewingPlaylistId = null;
+        this.pollingManager = null;
         this.init();
     }
 
     async init() {
-        console.log('🎵 Initializing Spotify Playlist Generator...');
+        // Initialize polling manager
+        this.pollingManager = createPollingManager(api, ui);
         
         // Check authentication status
         const isAuthenticated = auth.isAuthenticated();
@@ -26,6 +30,7 @@ class App {
             this.setupSpotifyListeners();
             await this.checkHealth();
             await this.loadPlaylists();
+            await this.loadUserGenres();
             
             // Listen for Spotify OAuth callback
             this.setupSpotifyCallback();
@@ -34,12 +39,37 @@ class App {
             ui.showAuthPage();
             this.setupAuthEventListeners();
         }
+        
+        // Listen for session expiry (401 errors redirect to login)
+        this.setupSessionListener();
+    }
+    
+    setupSessionListener() {
+        // Listen for hash changes (API client redirects to #login on 401)
+        window.addEventListener('hashchange', () => {
+            if (window.location.hash === '#login' && auth.isAuthenticated()) {
+                // Manually logged out due to session expiry
+                auth.logout();
+                this.pollingManager.stopAllPolling();
+                ui.showAuthPage();
+                this.setupAuthEventListeners();
+                ui.showError('Session expired. Please login again.');
+            }
+        });
     }
 
     setupEventListeners() {
         ui.playlistForm.addEventListener('submit', (e) => this.handleCreatePlaylist(e));
         if (ui.logoutBtn) {
             ui.logoutBtn.addEventListener('click', () => this.handleLogout());
+        }
+        
+        // Refresh genres button
+        const refreshGenresBtn = document.getElementById('refresh-genres-btn');
+        if (refreshGenresBtn) {
+            refreshGenresBtn.addEventListener('click', async () => {
+                await this.handleRefreshGenres();
+            });
         }
         
         // Close modal on Escape key
@@ -65,6 +95,12 @@ class App {
             }
             if (e.target.dataset.action === 'remove-collaborator') {
                 await this.removeCollaborator(e.target.dataset.playlistId, e.target.dataset.userId);
+            }
+            if (e.target.dataset.action === 'delete-track') {
+                await this.deleteTrack(e.target.dataset.playlistId, e.target.dataset.trackId);
+            }
+            if (e.target.dataset.action === 'delete-playlist') {
+                await this.deletePlaylist(e.target.dataset.playlistId);
             }
             if (e.target.dataset.action === 'close-invite-modal') {
                 ui.closeInviteModal();
@@ -192,6 +228,8 @@ class App {
 
     handleLogout() {
         if (confirm('Are you sure you want to logout?')) {
+            // Stop all polling before logout
+            this.pollingManager.stopAllPolling();
             auth.logout();
             location.reload();
         }
@@ -329,6 +367,10 @@ class App {
             for (let playlist of this.playlists) {
                 try {
                     playlist.tracks = await api.getPlaylistTracks(playlist.id);
+                    // Start polling for real-time updates on each playlist
+                    this.pollingManager.startPolling(playlist.id, (updatedPlaylist) => {
+                        this.handlePlaylistUpdate(playlist.id, updatedPlaylist);
+                    });
                 } catch (error) {
                     console.warn(`Failed to load tracks for playlist ${playlist.id}:`, error);
                     playlist.tracks = [];
@@ -336,12 +378,33 @@ class App {
             }
             
             ui.renderPlaylists(this.playlists);
-            console.log(`✅ Loaded ${this.playlists.length} playlists`);
+            console.log(`✅ Loaded ${this.playlists.length} playlists with real-time sync`);
         } catch (error) {
             ui.showError(error.message);
             console.error('Error loading playlists:', error);
         } finally {
             ui.showLoading(false);
+        }
+    }
+
+    handlePlaylistUpdate(playlistId, updatedPlaylist) {
+        if (!updatedPlaylist) {
+            // Playlist was deleted
+            this.playlists = this.playlists.filter(p => p.id !== playlistId);
+            ui.showSuccess('Playlist was removed by owner');
+            ui.renderPlaylists(this.playlists);
+            return;
+        }
+
+        // Find and update the playlist
+        const playlistIndex = this.playlists.findIndex(p => p.id === playlistId);
+        if (playlistIndex >= 0) {
+            this.playlists[playlistIndex] = {
+                ...this.playlists[playlistIndex],
+                ...updatedPlaylist
+            };
+            // Re-render just this playlist (or all for simplicity)
+            ui.renderPlaylists(this.playlists);
         }
     }
 
@@ -405,6 +468,18 @@ class App {
     async addTrackToPlaylist(trackId) {
         if (!this.currentPlaylistId) {
             ui.showError('No playlist selected');
+            return;
+        }
+        
+        // Check if user has Spotify connected
+        const user = auth.getCurrentUser();
+        if (!user || !user.spotify_id) {
+            ui.showError('Please connect your Spotify account first to add tracks with genres');
+            // Show Spotify connect button
+            const connectBtn = document.getElementById('spotify-connect-btn');
+            if (connectBtn) {
+                connectBtn.scrollIntoView({ behavior: 'smooth' });
+            }
             return;
         }
 
@@ -476,6 +551,71 @@ class App {
             ui.loadCollaborators(playlistId);
         } catch (error) {
             ui.showError(`Failed to remove collaborator: ${error.message}`);
+        } finally {
+            ui.showLoading(false);
+        }
+    }
+
+    async deleteTrack(playlistId, trackId) {
+        if (!confirm('Remove this track from playlist?')) {
+            return;
+        }
+
+        try {
+            ui.showLoading(true);
+            await api.deleteTrackFromPlaylist(playlistId, trackId);
+            ui.showSuccess('Track removed! 🗑️');
+            // Reload playlists to refresh UI
+            await this.loadPlaylists();
+        } catch (error) {
+            ui.showError(`Failed to remove track: ${error.message}`);
+        } finally {
+            ui.showLoading(false);
+        }
+    }
+
+    async deletePlaylist(playlistId) {
+        if (!confirm('Are you sure you want to delete this entire playlist? This cannot be undone.')) {
+            return;
+        }
+
+        try {
+            ui.showLoading(true);
+            await api.deletePlaylist(playlistId);
+            ui.showSuccess('Playlist deleted! 🗑️');
+            // Remove from playlists array
+            this.playlists = this.playlists.filter(p => p.id !== playlistId);
+            ui.renderPlaylists(this.playlists);
+            // Stop polling for this playlist
+            this.pollingManager.stopPolling(playlistId);
+        } catch (error) {
+            ui.showError(`Failed to delete playlist: ${error.message}`);
+        } finally {
+            ui.showLoading(false);
+        }
+    }
+
+    async loadUserGenres() {
+        try {
+            const response = await api.getUserGenres();
+            ui.renderFavoriteGenres(response.genres);
+        } catch (error) {
+            console.error('Failed to load user genres:', error);
+            // Silent fail - genres are optional
+            ui.renderFavoriteGenres([]);
+        }
+    }
+
+    async handleRefreshGenres() {
+        try {
+            ui.showLoading(true);
+            ui.showSuccess('Refreshing your favorite genres...');
+            const response = await api.refreshUserGenres();
+            ui.renderFavoriteGenres(response.genres);
+            ui.showSuccess(`Found ${response.count} favorite genres! ✨`);
+        } catch (error) {
+            ui.showError(`Failed to refresh genres: ${error.message}`);
+            console.error('Error refreshing genres:', error);
         } finally {
             ui.showLoading(false);
         }

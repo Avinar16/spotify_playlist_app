@@ -80,3 +80,8 @@ class HealthResponse(BaseModel):
     status: str
     message: str
     database: str
+
+
+class GenresResponse(BaseModel):
+    genres: list[str]
+    count: int

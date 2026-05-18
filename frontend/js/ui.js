@@ -112,6 +112,7 @@ export class UI {
     }
 
     updateHealthStatus(healthy, message = '') {
+        if (!this.healthStatus) return;  // Element no longer exists
         if (healthy) {
             this.healthStatus.innerHTML = `<span class="status success">✓ Connected</span>`;
         } else {
@@ -138,12 +139,14 @@ export class UI {
                         <p class="playlist-description">${this.escapeHtml(playlist.description || 'No description')}</p>
                     </div>
                     <div class="playlist-stats">
+                        <span class="sync-indicator" data-playlist-id="${playlist.id}" title="Real-time sync active" style="opacity: 0.3; margin-right: 8px;">🔄</span>
                         <span class="stat-badge">🎵 ${playlist.tracks ? playlist.tracks.length : 0}</span>
                         ${playlist.tracks && playlist.tracks.length > 0 ? `
                             <button class="btn-collapse" data-action="toggle-tracks" data-playlist-id="${playlist.id}" title="Toggle tracks">
                                 <span class="collapse-icon">▼</span>
                             </button>
                         ` : ''}
+                        <button class="btn-delete-playlist" data-action="delete-playlist" data-playlist-id="${playlist.id}" title="Delete playlist">🗑️</button>
                     </div>
                 </div>
 
@@ -169,8 +172,16 @@ export class UI {
                                         ${track.track_artist ? `
                                             <span class="track-artist">${this.escapeHtml(track.track_artist)}</span>
                                         ` : ''}
+                                        ${track.track_genres && Array.isArray(track.track_genres) && track.track_genres.length > 0 ? `
+                                            <div class="track-genres">
+                                                ${track.track_genres.slice(0, 3).map(genre => `
+                                                    <span class="genre-tag">${this.escapeHtml(genre)}</span>
+                                                `).join('')}
+                                            </div>
+                                        ` : ''}
                                     </div>
                                     <span class="track-time">${new Date(track.added_at).toLocaleDateString()}</span>
+                                    <button class="btn-remove-track" data-action="delete-track" data-track-id="${track.id}" data-playlist-id="${playlist.id}" title="Remove track">✕</button>
                                 </div>
                             `).join('')}
                         </div>
@@ -234,6 +245,22 @@ export class UI {
             "'": '&#039;'
         };
         return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    renderFavoriteGenres(genres) {
+        const container = document.getElementById('genres-container');
+        if (!container) return;
+
+        if (!genres || genres.length === 0) {
+            container.innerHTML = '<p style="color: var(--text-secondary);">Connect your Spotify account and refresh to see your favorite genres</p>';
+            return;
+        }
+
+        const html = genres.map(genre => `
+            <span class="genre-tag">${this.escapeHtml(genre)}</span>
+        `).join('');
+
+        container.innerHTML = html;
     }
 
     setupCollapseListeners() {

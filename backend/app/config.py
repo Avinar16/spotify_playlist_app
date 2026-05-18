@@ -4,18 +4,21 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://spotify_user:spotify_password@localhost:5432/spotify_playlist_db"
+    DATABASE_URL: str
     
     # JWT
-    JWT_SECRET: str = "your-secret-key-change-in-production"
+    JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRATION_HOURS: int = 24
-    JWT_REFRESH_EXPIRATION_DAYS: int = 7
+    JWT_EXPIRATION_HOURS: int = 720  # 30 days
+    JWT_REFRESH_EXPIRATION_DAYS: int = 60
     
     # Spotify API
-    SPOTIFY_CLIENT_ID: str = "28cd22a51fff4f499901583a60f5a937"
-    SPOTIFY_CLIENT_SECRET: str = "46a4a05fab674c0d81e32f6d21b3955b"
+    SPOTIFY_CLIENT_ID: str
+    SPOTIFY_CLIENT_SECRET: str
     SPOTIFY_REDIRECT_URI: str = "http://127.0.0.1:8000/api/spotify/callback"
+
+    LASTFM_KEY: str
+    LASTFM_SHARED: str
     
     # App
     DEBUG: bool = True

@@ -23,6 +23,7 @@ class UserModel(Base):
     spotify_id = Column(String(255), unique=True, nullable=True, index=True)
     access_token = Column(Text, nullable=True)
     refresh_token = Column(Text, nullable=True)
+    favorite_genres = Column(Text, nullable=True)  # JSON array of favorite genres
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -64,6 +65,7 @@ class PlaylistTrackModel(Base):
     track_name = Column(String(255), nullable=True)
     track_artist = Column(String(255), nullable=True)
     track_image_url = Column(Text, nullable=True)  # Album cover image
+    track_genres = Column(Text, nullable=True)  # JSON array of genres stored as string
     added_by_id = Column(String(36), ForeignKey('users.id'), nullable=False)
     added_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

@@ -8,16 +8,16 @@ from app.config import settings
 
 class SpotifyClient:
     """Spotify API client with OAuth2 PKCE flow support"""
-    
+
     BASE_URL = "https://api.spotify.com/v1"
     AUTH_URL = "https://accounts.spotify.com/authorize"
     TOKEN_URL = "https://accounts.spotify.com/api/token"
-    
+
     def __init__(self):
         self.client_id = settings.SPOTIFY_CLIENT_ID
         self.client_secret = settings.SPOTIFY_CLIENT_SECRET
         self.redirect_uri = settings.SPOTIFY_REDIRECT_URI
-    
+
     @staticmethod
     def generate_pkce_pair() -> tuple[str, str]:
         """Generate PKCE code_verifier and code_challenge"""
@@ -26,7 +26,7 @@ class SpotifyClient:
             hashlib.sha256(code_verifier.encode("utf-8")).digest()
         ).decode("utf-8").rstrip("=")
         return code_verifier, code_challenge
-    
+
     def get_auth_url(self, state: str, code_challenge: str, scopes: Optional[list[str]] = None) -> str:
         """Generate Spotify authorization URL"""
         if scopes is None:
@@ -37,7 +37,7 @@ class SpotifyClient:
                 "playlist-modify-public",
                 "playlist-modify-private",
             ]
-        
+
         params = {
             "client_id": self.client_id,
             "response_type": "code",
@@ -47,10 +47,10 @@ class SpotifyClient:
             "code_challenge_method": "S256",
             "code_challenge": code_challenge,
         }
-        
+
         query_string = "&".join(f"{k}={v}" for k, v in params.items())
         return f"{self.AUTH_URL}?{query_string}"
-    
+
     async def get_access_token(self, code: str, code_verifier: str) -> dict:
         """Exchange authorization code for access token using PKCE"""
         async with httpx.AsyncClient() as client:
@@ -66,7 +66,7 @@ class SpotifyClient:
             )
             response.raise_for_status()
             return response.json()
-    
+
     async def refresh_access_token(self, refresh_token: str) -> dict:
         """Refresh access token using refresh token"""
         async with httpx.AsyncClient() as client:
@@ -81,7 +81,7 @@ class SpotifyClient:
             )
             response.raise_for_status()
             return response.json()
-    
+
     async def get_current_user(self, access_token: str) -> dict:
         """Get current user profile"""
         async with httpx.AsyncClient() as client:
@@ -91,8 +91,9 @@ class SpotifyClient:
             )
             response.raise_for_status()
             return response.json()
-    
-    async def get_top_tracks(self, access_token: str, limit: int = 20, offset: int = 0, time_range: str = "medium_term") -> dict:
+
+    async def get_top_tracks(self, access_token: str, limit: int = 20, offset: int = 0,
+                             time_range: str = "medium_term") -> dict:
         """Get user's top tracks"""
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -106,7 +107,32 @@ class SpotifyClient:
             )
             response.raise_for_status()
             return response.json()
-    
+
+    async def get_top_artists(self, access_token: str, limit: int = 20, offset: int = 0,
+                              time_range: str = "medium_term") -> dict:
+        """Get user's top artists with genres"""
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.BASE_URL}/me/top/artists",
+                headers={"Authorization": f"Bearer {access_token}"},
+                params={
+                    "limit": limit,
+                    "offset": offset,
+                    "time_range": time_range,
+                },
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def get_artist_by_id(self, access_token: str, artist_id: str) -> dict:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.BASE_URL}/artists/{artist_id}",
+                headers={"Authorization": f"Bearer {access_token}"}
+            )
+            response.raise_for_status()
+            return response.json()
+
     async def get_audio_features(self, access_token: str, track_ids: list[str]) -> dict:
         """Get audio features for tracks"""
         async with httpx.AsyncClient() as client:
@@ -117,7 +143,7 @@ class SpotifyClient:
             )
             response.raise_for_status()
             return response.json()
-    
+
     async def get_recommendations(self, access_token: str, seed_tracks: list[str], limit: int = 20) -> dict:
         """Get recommendations based on seed tracks"""
         async with httpx.AsyncClient() as client:
@@ -131,7 +157,7 @@ class SpotifyClient:
             )
             response.raise_for_status()
             return response.json()
-    
+
     async def search_tracks(self, access_token: str, query: str, limit: int = 20) -> list[dict]:
         """Search for tracks"""
         async with httpx.AsyncClient() as client:
@@ -146,7 +172,7 @@ class SpotifyClient:
             )
             response.raise_for_status()
             data = response.json()
-            # Return simplified track data
+            # Return simplified track data with genres
             return [
                 {
                     "id": track["id"],
@@ -156,29 +182,88 @@ class SpotifyClient:
                     "image": track.get("album", {}).get("images", [{}])[0].get("url"),
                     "duration_ms": track.get("duration_ms", 0),
                     "preview_url": track.get("preview_url"),
+                    "genres": track.get("genres", []),  # Track genres if available
                 }
                 for track in data.get("tracks", {}).get("items", [])
             ]
-    
+
+    async def get_artist_genres(self, access_token: str, artist_ids: list[str]) -> dict:
+        """Get genres for artists"""
+        if not artist_ids:
+            return {}
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.BASE_URL}/artists",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    params={"ids": ",".join(artist_ids[:50])},  # API limit is 50
+                )
+                response.raise_for_status()
+                data = response.json()
+                # Return mapping of artist_id -> genres
+                return {
+                    artist["id"]: artist.get("genres", [])
+                    for artist in data.get("artists", [])
+                }
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 403:
+                # Token likely expired, return empty genres
+                return {}
+            raise
+
     async def get_track(self, access_token: str, track_id: str) -> dict:
-        """Get track details by ID"""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.BASE_URL}/tracks/{track_id}",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-            response.raise_for_status()
-            track = response.json()
-            return {
-                "id": track["id"],
-                "name": track["name"],
-                "artist": ", ".join([a["name"] for a in track.get("artists", [])]),
-                "album": track.get("album", {}).get("name", ""),
-                "image": track.get("album", {}).get("images", [{}])[0].get("url"),
-                "duration_ms": track.get("duration_ms", 0),
-                "preview_url": track.get("preview_url"),
-            }
-    
+        """Get track details by ID with artist genres"""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.BASE_URL}/tracks/{track_id}",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+                response.raise_for_status()
+                track = response.json()
+
+                # Get artist genres
+                artist_ids = [a["id"] for a in track.get("artists", [])]
+                genres = []
+                if artist_ids:
+                    artist_genres_map = await self.get_artist_genres(access_token, artist_ids)
+                    # Collect all unique genres from all artists
+                    for artist_id in artist_ids:
+                        genres.extend(artist_genres_map.get(artist_id, []))
+                    genres = list(set(genres))[:5]  # Limit to 5 unique genres
+
+                return {
+                    "id": track["id"],
+                    "name": track["name"],
+                    "artist": ", ".join([a["name"] for a in track.get("artists", [])]),
+                    "album": track.get("album", {}).get("name", ""),
+                    "image": track.get("album", {}).get("images", [{}])[0].get("url"),
+                    "duration_ms": track.get("duration_ms", 0),
+                    "preview_url": track.get("preview_url"),
+                    "genres": genres,
+                }
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 403:
+                # Token expired, return track without genres
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"{self.BASE_URL}/tracks/{track_id}",
+                        headers={"Authorization": f"Bearer {access_token}"},
+                    )
+                    response.raise_for_status()
+                    track = response.json()
+                    return {
+                        "id": track["id"],
+                        "name": track["name"],
+                        "artist": ", ".join([a["name"] for a in track.get("artists", [])]),
+                        "album": track.get("album", {}).get("name", ""),
+                        "image": track.get("album", {}).get("images", [{}])[0].get("url"),
+                        "duration_ms": track.get("duration_ms", 0),
+                        "preview_url": track.get("preview_url"),
+                        "genres": [],
+                    }
+            raise
+
     async def create_playlist(self, access_token: str, name: str, description: str = "") -> dict:
         """Create a playlist for current user"""
         async with httpx.AsyncClient() as client:
@@ -193,7 +278,7 @@ class SpotifyClient:
             )
             response.raise_for_status()
             return response.json()
-    
+
     async def add_tracks_to_playlist(self, access_token: str, playlist_id: str, track_ids: list[str]) -> dict:
         """Add tracks to a playlist"""
         async with httpx.AsyncClient() as client:

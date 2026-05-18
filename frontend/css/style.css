@@ -366,6 +366,24 @@ header .container > div {
     background-color: #1ed760;
 }
 
+.btn-secondary {
+    background-color: #282828;
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-size: 14px;
+}
+
+.btn-secondary:hover {
+    background-color: #1DB954;
+    border-color: #1DB954;
+    color: var(--secondary-color);
+}
+
 .btn-close {
     background: none;
     border: none;
@@ -922,3 +940,74 @@ header .container > div {
     border-color: rgba(255, 0, 0, 0.6);
     color: #ff6666;
 }
+
+/* Delete buttons */
+.btn-remove-track {
+    background-color: transparent;
+    border: 1px solid rgba(255, 0, 0, 0.3);
+    color: #ff4444;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+    margin-left: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-remove-track:hover {
+    background-color: rgba(255, 0, 0, 0.15);
+    border-color: rgba(255, 0, 0, 0.6);
+    color: #ff6666;
+}
+
+.btn-delete-playlist {
+    background-color: transparent;
+    border: 1px solid rgba(255, 0, 0, 0.3);
+    color: #ff4444;
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 18px;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.btn-delete-playlist:hover {
+    background-color: rgba(255, 0, 0, 0.15);
+    border-color: rgba(255, 0, 0, 0.6);
+    color: #ff6666;
+}
+
+.track-genres {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.genre-tag {
+    background-color: rgba(29, 185, 84, 0.2);
+    border: 1px solid rgba(29, 185, 84, 0.5);
+    color: #1DB954;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    max-width: 100px;
+}
+

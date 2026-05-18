@@ -9,6 +9,7 @@ from app.interfaces.http.routes import router as playlist_router
 from app.interfaces.http.auth_routes import router as auth_router
 from app.interfaces.http.spotify_oauth_routes import router as spotify_router
 from app.interfaces.http.playlist_routes import router as playlist_mgmt_router
+from app.interfaces.http.user_routes import router as user_router
 
 # Configure logging
 logging.basicConfig(
@@ -16,6 +17,14 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Disable SQLAlchemy logging
+logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
+
+# Disable httpx/httpcore logging
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
 
 
 @asynccontextmanager
@@ -63,6 +72,7 @@ app.add_middleware(
 # Include routes
 app.include_router(auth_router)
 app.include_router(spotify_router)
+app.include_router(user_router)
 app.include_router(playlist_mgmt_router)
 app.include_router(playlist_router)
 

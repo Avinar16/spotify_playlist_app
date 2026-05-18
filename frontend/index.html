@@ -105,10 +105,6 @@
                         <button id="logout-btn" class="btn-logout">Logout</button>
                     </div>
                 </div>
-                <div style="margin-top: 15px;">
-                    <span>Status: </span>
-                    <span id="health-status" class="status loading">⏳ Checking...</span>
-                </div>
             </div>
         </header>
 
@@ -122,6 +118,16 @@
             </div>
 
             <!-- Create Playlist Form -->
+            <div class="card">
+                <h2>Your Favorite Genres</h2>
+                <div id="favorite-genres" style="margin-bottom: 20px;">
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;" id="genres-container">
+                        <p style="color: var(--text-secondary);">Loading genres...</p>
+                    </div>
+                    <button type="button" id="refresh-genres-btn" class="btn-secondary" style="margin-top: 10px;">🔄 Refresh Genres</button>
+                </div>
+            </div>
+
             <div class="card">
                 <h2>Create New Playlist</h2>
                 <form id="playlist-form">
