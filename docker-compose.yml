@@ -11,7 +11,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U spotify_user"]
+      test: [ "CMD-SHELL", "pg_isready -U spotify_user" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -37,13 +37,15 @@ services:
     container_name: spotify_nginx
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./frontend:/usr/share/nginx/html:ro
+      - ./ssl:/etc/letsencrypt/live/spotifycollab.duckdns.org:ro  # ← добавили SSL
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/" ]
       interval: 10s
       timeout: 5s
       retries: 3
