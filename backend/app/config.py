@@ -1,4 +1,5 @@
 import os
+import logging
 from pydantic_settings import BaseSettings
 
 
@@ -32,3 +33,10 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Log actual redirect URI being used
+logger = logging.getLogger(__name__)
+if settings.DEBUG:
+    logger.info(f"✅ Spotify OAuth configured:")
+    logger.info(f"   REDIRECT_URI: {settings.SPOTIFY_REDIRECT_URI}")
+    logger.info(f"   ENVIRONMENT: {settings.ENVIRONMENT}")

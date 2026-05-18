@@ -16,6 +16,10 @@ class RegisterUserUseCase:
         if not email or not username or not password:
             raise ValidationError("Email, username, and password are required")
         
+        # Validate email format
+        if "@" not in email or "." not in email.split("@")[-1]:
+            raise ValidationError("Invalid email format")
+        
         if len(password) < 8:
             raise ValidationError("Password must be at least 8 characters")
         

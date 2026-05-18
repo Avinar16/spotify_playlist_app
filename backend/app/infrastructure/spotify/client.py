@@ -53,7 +53,11 @@ class SpotifyClient:
 
     async def get_access_token(self, code: str, code_verifier: str) -> dict:
         """Exchange authorization code for access token using PKCE"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         async with httpx.AsyncClient() as client:
+            logger.info(f"Getting access token with redirect_uri: {self.redirect_uri}")
             response = await client.post(
                 self.TOKEN_URL,
                 data={
@@ -64,8 +68,11 @@ class SpotifyClient:
                     "code_verifier": code_verifier,
                 },
             )
+            logger.info(f"Token exchange response status: {response.status_code}")
             response.raise_for_status()
-            return response.json()
+            token_data = response.json()
+            logger.info(f"Got access token, expires in: {token_data.get('expires_in')} seconds")
+            return token_data
 
     async def refresh_access_token(self, refresh_token: str) -> dict:
         """Refresh access token using refresh token"""
@@ -84,11 +91,18 @@ class SpotifyClient:
 
     async def get_current_user(self, access_token: str) -> dict:
         """Get current user profile"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.debug(f"Fetching current user with token: {access_token[:20]}...")
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/me",
                 headers={"Authorization": f"Bearer {access_token}"},
             )
+            logger.info(f"get_current_user response status: {response.status_code}")
+            if response.status_code != 200:
+                logger.error(f"Failed to get current user: {response.status_code} {response.text}")
             response.raise_for_status()
             return response.json()
 
