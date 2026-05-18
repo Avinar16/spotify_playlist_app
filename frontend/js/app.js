@@ -71,38 +71,73 @@ class App {
                 await this.handleRefreshGenres();
             });
         }
+
+        const generateCountRange = document.getElementById('generate-count-range');
+        if (generateCountRange) {
+            generateCountRange.addEventListener('input', (e) => {
+                ui.updateGenerateCount(e.target.value);
+            });
+        }
+
+        // Direct listener for generate button
+        const generateBtn = document.getElementById('generate-playlist-submit');
+        if (generateBtn) {
+            generateBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Generate button clicked');
+                await this.handleGeneratePlaylist();
+            });
+        }
+        
+        // Close modal button
+        const closeGenerateBtn = document.getElementById('close-generate-modal');
+        if (closeGenerateBtn) {
+            closeGenerateBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.closeGenerateModal();
+            });
+        }
         
         // Close modal on Escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 this.closeSearchModal();
+                this.closeGenerateModal();
             }
         });
         
         // Event delegation for playlist actions
         document.addEventListener('click', async (e) => {
-            if (e.target.dataset.action === 'search-tracks') {
-                await this.openSearchModal(e.target.dataset.playlistId);
+            const actionElement = e.target.closest('[data-action]');
+
+            if (actionElement?.dataset.action === 'search-tracks') {
+                await this.openSearchModal(actionElement.dataset.playlistId);
             }
-            if (e.target.dataset.action === 'invite-collaborators') {
-                ui.showInviteDialog(e.target.dataset.playlistId);
+            if (actionElement?.dataset.action === 'invite-collaborators') {
+                ui.showInviteDialog(actionElement.dataset.playlistId);
             }
-            if (e.target.dataset.action === 'save-spotify') {
-                await this.savePlaylistToSpotify(e.target.dataset.playlistId);
+            if (actionElement?.dataset.action === 'save-spotify') {
+                await this.savePlaylistToSpotify(actionElement.dataset.playlistId);
             }
-            if (e.target.dataset.action === 'add-track') {
-                await this.addTrackToPlaylist(e.target.dataset.trackId);
+            if (actionElement?.dataset.action === 'generate-playlist') {
+                ui.showGenerateModal(actionElement.dataset.playlistId, actionElement.dataset.playlistName);
+                await this.loadBridgeArtists(actionElement.dataset.playlistId);
             }
-            if (e.target.dataset.action === 'remove-collaborator') {
-                await this.removeCollaborator(e.target.dataset.playlistId, e.target.dataset.userId);
+            if (actionElement?.dataset.action === 'add-track') {
+                await this.addTrackToPlaylist(actionElement.dataset.trackId);
             }
-            if (e.target.dataset.action === 'delete-track') {
-                await this.deleteTrack(e.target.dataset.playlistId, e.target.dataset.trackId);
+            if (actionElement?.dataset.action === 'remove-collaborator') {
+                await this.removeCollaborator(actionElement.dataset.playlistId, actionElement.dataset.userId);
             }
-            if (e.target.dataset.action === 'delete-playlist') {
-                await this.deletePlaylist(e.target.dataset.playlistId);
+            if (actionElement?.dataset.action === 'delete-track') {
+                await this.deleteTrack(actionElement.dataset.playlistId, actionElement.dataset.trackId);
             }
-            if (e.target.dataset.action === 'close-invite-modal') {
+            if (actionElement?.dataset.action === 'delete-playlist') {
+                await this.deletePlaylist(actionElement.dataset.playlistId);
+            }
+            if (actionElement?.dataset.action === 'close-invite-modal') {
                 ui.closeInviteModal();
             }
         });
@@ -121,6 +156,13 @@ class App {
             const modal = document.getElementById('search-modal');
             if (modal && modal.style.display === 'flex' && e.target === modal.querySelector('.modal-overlay')) {
                 this.closeSearchModal();
+            }
+        });
+
+        document.addEventListener('click', (e) => {
+            const modal = document.getElementById('generate-modal');
+            if (modal && modal.style.display === 'flex' && e.target === modal.querySelector('.modal-overlay')) {
+                this.closeGenerateModal();
             }
         });
         
@@ -453,6 +495,10 @@ class App {
         }
     }
 
+    closeGenerateModal() {
+        ui.closeGenerateModal();
+    }
+
     async performSearch(query) {
         try {
             ui.showLoading(true);
@@ -462,6 +508,47 @@ class App {
             ui.showError(`Search failed: ${error.message}`);
         } finally {
             ui.showLoading(false);
+        }
+    }
+
+    async handleGeneratePlaylist() {
+        const quantity = ui.getGenerateCount();
+        const playlistId = ui.getSelectedGeneratePlaylistId();
+
+        if (!playlistId) {
+            ui.showError('No playlist selected');
+            return;
+        }
+
+        try {
+            ui.showLoading(true);
+            ui.showSuccess(`Generating ${quantity} tracks...`);
+            
+            const result = await api.generatePlaylist(playlistId, quantity);
+            
+            this.closeGenerateModal();
+            ui.showSuccess(`✨ Added ${result.tracks_added} tracks using ${result.bridge_artists_used} bridge artists!`);
+            
+            // Reload playlists to show new tracks
+            await this.loadPlaylists();
+        } catch (error) {
+            ui.showError(`Failed to generate playlist: ${error.message}`);
+        } finally {
+            ui.showLoading(false);
+        }
+    }
+
+    async loadBridgeArtists(playlistId) {
+        try {
+            const data = await api.getBridgeArtists(playlistId);
+            ui.renderBridgeArtistsModal(data);
+        } catch (error) {
+            console.error('Failed to load bridge artists:', error);
+            // Show fallback message
+            const list = document.getElementById('bridge-artists-list');
+            if (list) {
+                list.innerHTML = '<p style="color: var(--text-secondary);">Failed to load bridge artists</p>';
+            }
         }
     }
 

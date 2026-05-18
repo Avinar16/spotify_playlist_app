@@ -12,7 +12,11 @@ from app.interfaces.schemas import (
     UserResponse,
 )
 from app.interfaces.http.auth_routes import get_current_user_id
-from app.use_cases.playlists import GetPlaylistStateUseCase, DeleteTrackFromPlaylistUseCase, DeletePlaylistUseCase
+from app.use_cases.playlists import (
+    GetPlaylistStateUseCase,
+    DeleteTrackFromPlaylistUseCase,
+    DeletePlaylistUseCase,
+)
 from app.core.exceptions import AuthenticationError, ValidationError
 import uuid
 import logging
@@ -70,6 +74,8 @@ async def create_playlist(
     await db.commit()
     await db.refresh(new_playlist)
     return new_playlist
+
+
 
 
 @router.get("/api/playlists/{playlist_id}", response_model=PlaylistResponse)

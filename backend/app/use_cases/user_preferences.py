@@ -1,11 +1,56 @@
 """User preferences use cases (genres, taste profile)"""
 import logging
 import json
+import asyncio
 from typing import List, Dict, Any
 from collections import Counter
 from app.core.exceptions import AuthenticationError, ValidationError
 
 logger = logging.getLogger(__name__)
+
+
+class CaptureUserTopArtistsUseCase:
+    """Capture and store user's top artists from Spotify"""
+
+    def __init__(self, spotify_client, user_repository):
+        self.spotify_client = spotify_client
+        self.user_repository = user_repository
+
+    async def execute(self, user_id: str, limit: int = 30) -> Dict[str, Any]:
+        """
+        Fetch user's top artists from Spotify and store them.
+        """
+        try:
+            # Get user and their Spotify token
+            user = await self.user_repository.get_by_id(user_id)
+            if not user or not user.access_token:
+                raise AuthenticationError("Spotify account not linked")
+
+            # Fetch user's top artists
+            top_artists_response = await self.spotify_client.get_top_artists(
+                access_token=user.access_token,
+                limit=limit,
+                time_range="medium_term"
+            )
+
+            items = top_artists_response.get("items", [])
+            artist_names = [artist["name"] for artist in items]
+            
+            # Save to user record
+            await self.user_repository.update_top_artists(user_id, json.dumps(artist_names))
+            
+            logger.info(f"Captured {len(artist_names)} top artists for user {user_id}")
+
+            return {
+                "artists": artist_names,
+                "count": len(artist_names)
+            }
+
+        except AuthenticationError:
+            raise
+        except Exception as e:
+            logger.error(f"Error capturing top artists: {str(e)}")
+            raise ValidationError(f"Failed to capture top artists: {str(e)}")
 
 
 class GetUserFavoriteGenresUseCase:
@@ -20,6 +65,7 @@ class GetUserFavoriteGenresUseCase:
         """
         Fetch user's favorite genres from their top artists.
         Saves them to user record for future use.
+        Also captures top artists from Spotify.
         """
         try:
             # Get user and their Spotify token
@@ -34,10 +80,15 @@ class GetUserFavoriteGenresUseCase:
                 time_range="medium_term"
             )
 
-            artists = top_artists.get("items", [])
+            items = top_artists.get("items", [])
+            artist_names = [x["name"] for x in items]
+            
+            # Save top artists as well
+            await self.user_repository.update_top_artists(user_id, json.dumps(artist_names))
+            
             # logger.info(artists)
             #logger.info(f"Fetched {len(artists)} top artists for user")
-            all_genres = await self.lastfm_client.get_top_genres([x["name"] for x in artists])
+            all_genres = await self.lastfm_client.get_top_genres(artist_names)
             #logger.info(f"Total genres collected: {len(all_genres)}")
 
             # Count genre occurrences and get top 10

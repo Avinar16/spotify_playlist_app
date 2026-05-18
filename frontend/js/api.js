@@ -107,6 +107,14 @@ export class APIClient {
         return this.post(`/playlist/${playlistId}/sync-tracks`, {});
     }
 
+    async generatePlaylist(playlistId, quantity = 20) {
+        return this.post(`/playlist/${playlistId}/generate`, { quantity });
+    }
+
+    async getBridgeArtists(playlistId) {
+        return this.get(`/playlist/${playlistId}/bridge-artists`);
+    }
+
     async deleteTrackFromPlaylist(playlistId, trackId) {
         return this.delete(`/playlists/${playlistId}/tracks/${trackId}`);
     }

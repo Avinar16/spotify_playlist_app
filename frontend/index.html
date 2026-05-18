@@ -184,6 +184,56 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Generate Playlist Modal -->
+            <div id="generate-modal" style="display: none;">
+                <div class="modal-overlay"></div>
+                <div class="modal-content">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h2>Generate Playlist</h2>
+                        <button id="close-generate-modal" class="btn-close">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <p id="generate-modal-context" style="color: var(--text-secondary);">Taste mixing preview</p>
+                        
+                        <!-- Two columns -->
+                        <div class="bridge-artists-container">
+                            <!-- Column 1: Collaborators' top artists -->
+                            <div class="bridge-column">
+                                <h3>Артисты - кто любит</h3>
+                                <div id="collaborators-artists-list" style="max-height: 250px; overflow-y: auto;">
+                                    <p style="color: var(--text-secondary);">Loading artists...</p>
+                                </div>
+                            </div>
+                            
+                            <!-- Column 2: Bridge artists -->
+                            <div class="bridge-column">
+                                <h3>Похожие на любимых артистов</h3>
+                                <div id="bridge-artists-list" style="max-height: 250px; overflow-y: auto;">
+                                    <p style="color: var(--text-secondary);">Loading bridge artists...</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group" style="margin-top: 20px;">
+                            <label for="generate-count-range">Количество</label>
+                            <div class="range-row">
+                                <input
+                                    type="range"
+                                    id="generate-count-range"
+                                    min="5"
+                                    max="30"
+                                    value="10"
+                                >
+                                <span id="generate-count-value" class="range-value">10</span>
+                            </div>
+                        </div>
+                        <div class="button-group" style="justify-content: flex-end;">
+                            <button type="button" id="generate-playlist-submit" class="btn-primary">Сгенерировать</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 

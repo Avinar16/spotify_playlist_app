@@ -24,6 +24,11 @@ export class UI {
         this.registerPassword = document.getElementById('register-password');
         this.registerPasswordConfirm = document.getElementById('register-password-confirm');
         this.authStatus = document.getElementById('auth-status');
+        this.generateModal = document.getElementById('generate-modal');
+        this.generateCountRange = document.getElementById('generate-count-range');
+        this.generateCountValue = document.getElementById('generate-count-value');
+        this.generateModalContext = document.getElementById('generate-modal-context');
+        this.selectedGeneratePlaylistId = null;
     }
 
     // Auth UI methods
@@ -199,6 +204,9 @@ export class UI {
                     <button class="btn-action btn-invite" data-action="invite-collaborators" data-playlist-id="${playlist.id}">
                         <span>👥</span> Invite Friends
                     </button>
+                    <button class="btn-action btn-generate" data-action="generate-playlist" data-playlist-id="${playlist.id}" data-playlist-name="${this.escapeHtml(playlist.name)}">
+                        <span>🎧</span> Generate Playlist
+                    </button>
                     <button class="btn-action btn-save" data-action="save-spotify" data-playlist-id="${playlist.id}">
                         <span>💾</span> Save to Spotify
                     </button>
@@ -261,6 +269,104 @@ export class UI {
         `).join('');
 
         container.innerHTML = html;
+    }
+
+    showGenerateModal(playlistId, playlistName = '') {
+        this.selectedGeneratePlaylistId = playlistId || null;
+
+        if (this.generateModal) {
+            this.generateModal.style.display = 'flex';
+        }
+
+        if (this.generateModalContext) {
+            this.generateModalContext.textContent = playlistName
+                ? `Selected playlist: ${playlistName}`
+                : 'Select a playlist to generate into.';
+        }
+
+        if (this.generateCountRange) {
+            this.generateCountRange.value = '10';
+            this.updateGenerateCount('10');
+            this.generateCountRange.focus();
+        }
+    }
+
+    closeGenerateModal() {
+        if (this.generateModal) {
+            this.generateModal.style.display = 'none';
+        }
+        this.selectedGeneratePlaylistId = null;
+    }
+
+    updateGenerateCount(value) {
+        if (this.generateCountValue) {
+            this.generateCountValue.textContent = String(value);
+        }
+    }
+
+    getGenerateCount() {
+        const value = this.generateCountRange ? Number(this.generateCountRange.value) : 10;
+        return Number.isFinite(value) ? value : 10;
+    }
+
+    getSelectedGeneratePlaylistId() {
+        return this.selectedGeneratePlaylistId;
+    }
+
+    renderBridgeArtistsModal(data) {
+        // Render collaborators' artists in column 1
+        const collaboratorsListDiv = document.getElementById('collaborators-artists-list');
+        if (collaboratorsListDiv && data.collaborators) {
+            const artistItems = [];
+            
+            data.collaborators.forEach(collab => {
+                if (collab.top_artists && collab.top_artists.length > 0) {
+                    collab.top_artists.slice(0, 5).forEach(artist => {
+                        artistItems.push(`
+                            <div class="artist-item">
+                                <div class="artist-name">${this.escapeHtml(artist)}</div>
+                                <div class="artist-username">♥ ${this.escapeHtml(collab.username)}</div>
+                            </div>
+                        `);
+                    });
+                }
+            });
+            
+            if (artistItems.length > 0) {
+                collaboratorsListDiv.innerHTML = artistItems.join('');
+            } else {
+                collaboratorsListDiv.innerHTML = '<p style="color: var(--text-secondary);">No top artists found</p>';
+            }
+        }
+        
+        // Render bridge artists in column 2
+        const bridgeListDiv = document.getElementById('bridge-artists-list');
+        if (bridgeListDiv && data.bridge_artists) {
+            const bridgeItems = data.bridge_artists.map(artist => {
+                const scorePercent = Math.round(artist.score * 100);
+                return `
+                    <div class="artist-item">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
+                            <div style="flex: 1;">
+                                <div class="artist-name">${this.escapeHtml(artist.artist_name)}</div>
+                            </div>
+                            <div class="artist-score">
+                                <div class="score-bar">
+                                    <div class="score-fill" style="width: ${scorePercent}%"></div>
+                                </div>
+                                <div class="score-value">${scorePercent}%</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            if (bridgeItems.length > 0) {
+                bridgeListDiv.innerHTML = bridgeItems.join('');
+            } else {
+                bridgeListDiv.innerHTML = '<p style="color: var(--text-secondary);">No bridge artists found</p>';
+            }
+        }
     }
 
     setupCollapseListeners() {

@@ -95,3 +95,14 @@ class UserRepository:
         await self.db.commit()
         await self.db.refresh(user)
         return user
+    
+    async def update_top_artists(self, user_id: str, artists_json: str) -> UserModel:
+        """Update user's top artists"""
+        user = await self.get_by_id(user_id)
+        if not user:
+            raise ValueError("User not found")
+        
+        user.top_artists = artists_json
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user

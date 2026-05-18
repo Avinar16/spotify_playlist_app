@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Table, Boolean
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Table, Boolean, Float
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -24,6 +24,7 @@ class UserModel(Base):
     access_token = Column(Text, nullable=True)
     refresh_token = Column(Text, nullable=True)
     favorite_genres = Column(Text, nullable=True)  # JSON array of favorite genres
+    top_artists = Column(Text, nullable=True)  # JSON array of top artist names from Spotify
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -54,6 +55,20 @@ class PlaylistModel(Base):
         back_populates="collaborated_playlists"
     )
     tracks = relationship("PlaylistTrackModel", back_populates="playlist", cascade="all, delete-orphan")
+    bridge_artists = relationship("PlaylistBridgeArtistModel", back_populates="playlist", cascade="all, delete-orphan")
+
+
+class PlaylistBridgeArtistModel(Base):
+    __tablename__ = "playlist_bridge_artists"
+
+    id = Column(String(36), primary_key=True)
+    playlist_id = Column(String(36), ForeignKey('playlists.id'), nullable=False, index=True)
+    artist_name = Column(String(255), nullable=False)
+    score = Column(Float, nullable=False)  # Bridge score (0-1 range)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    playlist = relationship("PlaylistModel", back_populates="bridge_artists")
 
 
 class PlaylistTrackModel(Base):

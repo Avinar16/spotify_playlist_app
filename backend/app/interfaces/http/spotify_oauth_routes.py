@@ -11,6 +11,7 @@ from app.use_cases.spotify_auth import (
     LinkSpotifyAccountUseCase,
     UnlinkSpotifyAccountUseCase,
 )
+from app.use_cases.user_preferences import CaptureUserTopArtistsUseCase
 from app.core.exceptions import AuthenticationError, ValidationError
 from app.interfaces.http.auth_routes import get_current_user_id
 from app.config import settings
@@ -112,6 +113,10 @@ async def link_spotify_account(
             code=request.code,
             code_verifier=request.code_verifier,
         )
+        
+        # Capture top artists after successful link
+        capture_artists = CaptureUserTopArtistsUseCase(spotify_client, user_repository)
+        await capture_artists.execute(user_id)
         
         # Ensure commit
         await db.commit()

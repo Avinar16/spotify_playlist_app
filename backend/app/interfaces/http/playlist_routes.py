@@ -5,7 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.database.database import get_db
 from app.infrastructure.database.playlist_repository import PlaylistRepository
 from app.infrastructure.database.user_repository import UserRepository
+from app.infrastructure.database.bridge_artist_repository import BridgeArtistRepository
 from app.infrastructure.spotify.client import SpotifyClient
+from app.infrastructure.lastfm.client import LastFmClient
 from app.use_cases.playlists import (
     SearchTracksUseCase,
     AddTrackToPlaylistUseCase,
@@ -14,6 +16,8 @@ from app.use_cases.playlists import (
     InviteCollaboratorUseCase,
     GetPlaylistCollaboratorsUseCase,
     RemoveCollaboratorUseCase,
+    GeneratePlaylistFromBridgeUseCase,
+    FindBridgeArtistsUseCase,
 )
 from app.core.exceptions import AuthenticationError, ValidationError
 from app.interfaces.http.auth_routes import get_current_user_id
@@ -65,6 +69,70 @@ class CollaboratorResponse(BaseModel):
     id: str
     username: str
     email: str
+
+
+class GeneratePlaylistRequest(BaseModel):
+    quantity: int = 20
+
+
+class BridgeArtistResponse(BaseModel):
+    artist_name: str
+    score: float
+
+
+class BridgeArtistsWithCollaboratorsResponse(BaseModel):
+    """Response with bridge artists and collaborator info"""
+    bridge_artists: List[BridgeArtistResponse]
+    collaborators: List[Dict[str, Any]]  # {id, username, top_artists: [str]}
+
+
+class CollaboratorWithArtistsResponse(BaseModel):
+    id: str
+    username: str
+    top_artists: List[str]
+
+
+@router.post("/{playlist_id}/generate", response_model=Dict[str, Any])
+async def generate_playlist(
+    playlist_id: str,
+    request: GeneratePlaylistRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate and add tracks to playlist based on bridge artists"""
+    try:
+        playlist_repository = PlaylistRepository(db)
+        user_repository = UserRepository(db)
+        bridge_artist_repository = BridgeArtistRepository(db)
+        spotify_client = SpotifyClient()
+        lastfm_client = LastFmClient()
+        use_case = GeneratePlaylistFromBridgeUseCase(spotify_client, lastfm_client, playlist_repository, user_repository)
+        
+        result = await use_case.execute(
+            user_id=user_id,
+            playlist_id=playlist_id,
+            quantity=request.quantity
+        )
+        
+        return result
+    except AuthenticationError as e:
+        logger.error(f"Authentication error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e)
+        )
+    except ValidationError as e:
+        logger.error(f"Validation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error generating playlist: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate playlist"
+        )
 
 
 @router.post("/search-tracks", response_model=List[TrackResponse])
@@ -342,4 +410,91 @@ async def remove_collaborator(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to remove collaborator"
+        )
+
+
+@router.get("/{playlist_id}/bridge-artists", response_model=BridgeArtistsWithCollaboratorsResponse)
+async def get_bridge_artists(
+    playlist_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get cached bridge artists for a playlist along with collaborators' top artists.
+    This is used by the generation popup to show both columns:
+    - Column 1: Top artists from collaborators (with user labels)
+    - Column 2: Bridge artists for the playlist (with scores)
+    """
+    try:
+        playlist_repository = PlaylistRepository(db)
+        user_repository = UserRepository(db)
+        bridge_artist_repository = BridgeArtistRepository(db)
+        lastfm_client = LastFmClient()
+        
+        # Get playlist and check access
+        playlist = await playlist_repository.get_by_id(playlist_id)
+        if not playlist:
+            raise ValidationError("Playlist not found")
+        
+        # Check access (owner or collaborator)
+        if playlist.owner_id != user_id and not any(c.id == user_id for c in playlist.collaborators):
+            raise AuthenticationError("You don't have access to this playlist")
+        
+        # Get cached bridge artists or calculate if needed
+        bridge_use_case = FindBridgeArtistsUseCase(
+            lastfm_client,
+            playlist_repository,
+            user_repository,
+            bridge_artist_repository
+        )
+        bridge_artists = await bridge_use_case.execute(user_id, playlist_id, limit=20)
+        
+        # Get collaborators with their top artists
+        owner = await user_repository.get_by_id(playlist.owner_id)
+        collaborators = await playlist_repository.get_collaborators(playlist_id)
+        all_collaborators = [owner] + collaborators
+        
+        collaborators_data = []
+        for collab in all_collaborators:
+            import json
+            top_artists = []
+            if collab.top_artists:
+                try:
+                    top_artists = json.loads(collab.top_artists)
+                except Exception:
+                    pass
+            
+            collaborators_data.append({
+                "id": collab.id,
+                "username": collab.username,
+                "top_artists": top_artists
+            })
+        
+        # Format bridge artists response
+        bridge_artists_response = [
+            BridgeArtistResponse(artist_name=name, score=score)
+            for name, score in bridge_artists
+        ]
+        
+        return BridgeArtistsWithCollaboratorsResponse(
+            bridge_artists=bridge_artists_response,
+            collaborators=collaborators_data
+        )
+    except AuthenticationError as e:
+        logger.error(f"Authentication error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e)
+        )
+    except ValidationError as e:
+        logger.error(f"Validation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error getting bridge artists: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get bridge artists"
         )
