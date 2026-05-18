@@ -60,3 +60,9 @@ npm-debug.log
 postgres_data/
 .env.example
 .github/copilot-instructions.md
+ssl/cert.pem
+ssl/chain.pem
+ssl/fullchain.pem
+ssl/spotifycollab.duckdns.org/cert.pem
+ssl/spotifycollab.duckdns.org/chain.pem
+ssl/spotifycollab.duckdns.org/fullchain.pem

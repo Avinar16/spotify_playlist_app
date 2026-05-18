@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # Spotify API
     SPOTIFY_CLIENT_ID: str
     SPOTIFY_CLIENT_SECRET: str
-    SPOTIFY_REDIRECT_URI: str = "http://127.0.0.1:8000/api/spotify/callback"
+    SPOTIFY_REDIRECT_URI: str
 
     LASTFM_KEY: str
     LASTFM_SHARED: str
