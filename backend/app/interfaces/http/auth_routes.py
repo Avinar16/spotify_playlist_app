@@ -1,4 +1,3 @@
-"""Authentication routes"""
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.database.database import get_db
@@ -25,7 +24,6 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 async def get_current_user_id(authorization: Optional[str] = Header(None)) -> str:
-    """Extract user_id from Authorization header"""
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -60,7 +58,6 @@ async def register(
     user_data: UserRegister,
     db: AsyncSession = Depends(get_db)
 ):
-    """Register a new user"""
     import logging
     logger = logging.getLogger(__name__)
     
@@ -98,7 +95,6 @@ async def login(
     user_data: UserLogin,
     db: AsyncSession = Depends(get_db)
 ):
-    """Login user"""
     try:
         user_repository = UserRepository(db)
         use_case = LoginUserUseCase(user_repository)
@@ -131,7 +127,6 @@ async def refresh_token(
     request: TokenRefreshRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """Refresh access token"""
     try:
         user_repository = UserRepository(db)
         use_case = RefreshTokenUseCase(user_repository)
@@ -159,7 +154,6 @@ async def get_me(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get current user"""
     try:
         user_repository = UserRepository(db)
         use_case = GetCurrentUserUseCase(user_repository)

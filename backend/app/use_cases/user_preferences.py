@@ -1,44 +1,48 @@
-"""User preferences use cases (genres, taste profile)"""
 import logging
 import json
 import asyncio
+import httpx
 from typing import List, Dict, Any
 from collections import Counter
 from app.core.exceptions import AuthenticationError, ValidationError
+from app.infrastructure.spotify.token_utils import refresh_spotify_token
 
 logger = logging.getLogger(__name__)
 
 
 class CaptureUserTopArtistsUseCase:
-    """Capture and store user's top artists from Spotify"""
 
     def __init__(self, spotify_client, user_repository):
         self.spotify_client = spotify_client
         self.user_repository = user_repository
 
     async def execute(self, user_id: str, limit: int = 30) -> Dict[str, Any]:
-        """
-        Fetch user's top artists from Spotify and store them.
-        """
         try:
-            # Get user and their Spotify token
             user = await self.user_repository.get_by_id(user_id)
             if not user or not user.access_token:
                 raise AuthenticationError("Spotify account not linked")
 
-            # Fetch user's top artists
-            top_artists_response = await self.spotify_client.get_top_artists(
-                access_token=user.access_token,
-                limit=limit,
-                time_range="medium_term"
-            )
+            token = user.access_token
+            try:
+                top_artists_response = await self.spotify_client.get_top_artists(
+                    access_token=token,
+                    limit=limit,
+                    time_range="medium_term",
+                )
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code != 401:
+                    raise
+                token = await refresh_spotify_token(user, self.spotify_client, self.user_repository)
+                top_artists_response = await self.spotify_client.get_top_artists(
+                    access_token=token,
+                    limit=limit,
+                    time_range="medium_term",
+                )
 
             items = top_artists_response.get("items", [])
             artist_names = [artist["name"] for artist in items]
-            
-            # Save to user record
+
             await self.user_repository.update_top_artists(user_id, json.dumps(artist_names))
-            
             logger.info(f"Captured {len(artist_names)} top artists for user {user_id}")
 
             return {
@@ -54,7 +58,6 @@ class CaptureUserTopArtistsUseCase:
 
 
 class GetUserFavoriteGenresUseCase:
-    """Get user's favorite genres from their top tracks"""
 
     def __init__(self, spotify_client, user_repository, lastfm_client):
         self.spotify_client = spotify_client
@@ -63,42 +66,44 @@ class GetUserFavoriteGenresUseCase:
 
     async def execute(self, user_id: str, limit: int = 20) -> Dict[str, Any]:
         """
-        Fetch user's favorite genres from their top artists.
-        Saves them to user record for future use.
-        Also captures top artists from Spotify.
+        Fetches top artists, saves them, then derives genres via Last.fm.
+        Also updates user.top_artists as a side effect.
         """
         try:
-            # Get user and their Spotify token
             user = await self.user_repository.get_by_id(user_id)
             if not user or not user.access_token:
                 raise AuthenticationError("Spotify account not linked")
 
-            # Fetch user's top artists (which already contain genres)
-            top_artists = await self.spotify_client.get_top_artists(
-                access_token=user.access_token,
-                limit=limit,
-                time_range="medium_term"
-            )
+            token = user.access_token
+            try:
+                top_artists = await self.spotify_client.get_top_artists(
+                    access_token=token,
+                    limit=limit,
+                    time_range="medium_term",
+                )
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code != 401:
+                    raise
+                token = await refresh_spotify_token(user, self.spotify_client, self.user_repository)
+                top_artists = await self.spotify_client.get_top_artists(
+                    access_token=token,
+                    limit=limit,
+                    time_range="medium_term",
+                )
 
             items = top_artists.get("items", [])
             artist_names = [x["name"] for x in items]
-            
-            # Save top artists as well
-            await self.user_repository.update_top_artists(user_id, json.dumps(artist_names))
-            
-            # logger.info(artists)
-            #logger.info(f"Fetched {len(artists)} top artists for user")
-            all_genres = await self.lastfm_client.get_top_genres(artist_names)
-            #logger.info(f"Total genres collected: {len(all_genres)}")
 
-            # Count genre occurrences and get top 10
+            await self.user_repository.update_top_artists(user_id, json.dumps(artist_names))
+
+            all_genres = await self.lastfm_client.get_top_genres(artist_names)
+
             if all_genres:
                 genre_counts = Counter(all_genres)
                 top_genres = [genre for genre, _ in genre_counts.most_common(20)]
             else:
                 top_genres = []
 
-            # Save to user record
             user.favorite_genres = json.dumps(top_genres)
             await self.user_repository.update_favorite_genres(user_id, user.favorite_genres)
 
@@ -117,13 +122,11 @@ class GetUserFavoriteGenresUseCase:
 
 
 class GetUserGenresUseCase:
-    """Get user's previously saved favorite genres"""
 
     def __init__(self, user_repository):
         self.user_repository = user_repository
 
     async def execute(self, user_id: str) -> Dict[str, Any]:
-        """Get user's saved favorite genres"""
         try:
             user = await self.user_repository.get_by_id(user_id)
             if not user:

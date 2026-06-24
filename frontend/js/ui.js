@@ -140,7 +140,10 @@ export class UI {
             <div class="playlist-card" data-playlist-id="${playlist.id}">
                 <div class="playlist-header">
                     <div class="playlist-info">
-                        <h3 class="playlist-title">${this.escapeHtml(playlist.name)}</h3>
+                        <div class="playlist-title-row">
+                            <h3 class="playlist-title">${this.escapeHtml(playlist.name)}</h3>
+                            <button class="btn-edit-name" data-action="edit-playlist-name" data-playlist-id="${playlist.id}" title="Rename playlist">✏️</button>
+                        </div>
                         <p class="playlist-description">${this.escapeHtml(playlist.description || 'No description')}</p>
                     </div>
                     <div class="playlist-stats">

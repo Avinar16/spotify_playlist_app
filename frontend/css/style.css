@@ -568,12 +568,81 @@ header .container > div {
     flex: 1;
 }
 
+.playlist-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
 .playlist-title {
     font-size: 22px;
     font-weight: 700;
     color: var(--text-primary);
-    margin: 0 0 8px 0;
+    margin: 0;
     word-break: break-word;
+}
+
+.btn-edit-name {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    opacity: 0.4;
+    padding: 2px 4px;
+    transition: opacity 0.2s;
+    flex-shrink: 0;
+}
+
+.btn-edit-name:hover {
+    opacity: 1;
+}
+
+.playlist-name-input {
+    background: var(--bg-dark);
+    border: 1px solid var(--primary-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 20px;
+    font-weight: 700;
+    padding: 2px 8px;
+    flex: 1;
+    min-width: 0;
+    outline: none;
+}
+
+.btn-icon-confirm,
+.btn-icon-cancel {
+    background: transparent;
+    border: 1px solid;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.2s;
+}
+
+.btn-icon-confirm {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+.btn-icon-confirm:hover {
+    background: rgba(29, 185, 84, 0.15);
+}
+
+.btn-icon-cancel {
+    border-color: rgba(255, 68, 68, 0.5);
+    color: #ff4444;
+}
+
+.btn-icon-cancel:hover {
+    background: rgba(255, 68, 68, 0.15);
 }
 
 .playlist-description {

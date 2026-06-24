@@ -30,30 +30,26 @@ logging.getLogger('httpcore').setLevel(logging.WARNING)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context manager for startup and shutdown"""
-    # Startup
     logger.info("🚀 Starting application...")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
     logger.info(f"Debug: {settings.DEBUG}")
-    
+
     try:
         await init_db()
-        logger.info("✅ Database initialized")
+        logger.info("Database initialized")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize database: {e}")
-    
+        logger.error(f"Failed to initialize database: {e}")
+
     yield
-    
-    # Shutdown
-    logger.info("🛑 Shutting down...")
+
+    logger.info("Shutting down...")
     try:
         await close_db()
-        logger.info("✅ Database connection closed")
+        logger.info("Database connection closed")
     except Exception as e:
-        logger.error(f"❌ Error closing database: {e}")
+        logger.error(f"Error closing database: {e}")
 
 
-# Create FastAPI app
 app = FastAPI(
     title=settings.APP_TITLE,
     version=settings.APP_VERSION,
@@ -61,16 +57,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For development
+    allow_origins=settings.get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include routes
 app.include_router(auth_router)
 app.include_router(spotify_router)
 app.include_router(user_router)

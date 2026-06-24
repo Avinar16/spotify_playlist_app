@@ -1,58 +1,50 @@
-"""Playlist management use cases"""
 import logging
 import hashlib
 import json
+import httpx
 from typing import Optional, List, Dict, Any
 from uuid import uuid4
 from app.core.exceptions import ValidationError, AuthenticationError
+from app.infrastructure.spotify.token_utils import refresh_spotify_token
 
 logger = logging.getLogger(__name__)
 
 
 def check_playlist_access(playlist, user_id: str) -> bool:
-    """Check if user has access to playlist (owner or collaborator)"""
     if playlist.owner_id == user_id:
         return True
     return any(collab.id == user_id for collab in playlist.collaborators)
 
 
 class SearchTracksUseCase:
-    """Search for tracks in Spotify"""
 
     def __init__(self, spotify_client, user_repository):
         self.spotify_client = spotify_client
         self.user_repository = user_repository
 
     async def execute(self, user_id: str, query: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Search for tracks by query"""
         if not query or len(query.strip()) < 2:
             raise ValidationError("Search query must be at least 2 characters")
 
-        try:
-            # Get user's Spotify access token
-            user = await self.user_repository.get_by_id(user_id)
-            if not user or not user.access_token:
-                raise AuthenticationError("Spotify account not linked")
+        user = await self.user_repository.get_by_id(user_id)
+        if not user or not user.access_token:
+            raise AuthenticationError("Spotify account not linked")
 
-            results = await self.spotify_client.search_tracks(
+        try:
+            return await self.spotify_client.search_tracks(
                 access_token=user.access_token,
                 query=query.strip(),
-                limit=limit
+                limit=limit,
             )
-            return results
-        except AuthenticationError:
-            raise
-        except Exception as e:
-            error_str = str(e)
-            # Check if it's a 401 Unauthorized error
-            if "401" in error_str or "Unauthorized" in error_str:
-                raise AuthenticationError("Spotify session expired. Please reconnect your account.")
-            logger.error(f"Error searching tracks: {str(e)}")
-            raise ValidationError(f"Failed to search tracks: {str(e)}")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code != 401:
+                logger.error(f"Spotify API error searching tracks: {e}")
+                raise ValidationError("Failed to search tracks")
+            token = await refresh_spotify_token(user, self.spotify_client, self.user_repository)
+            return await self.spotify_client.search_tracks(access_token=token, query=query.strip(), limit=limit)
 
 
 class AddTrackToPlaylistUseCase:
-    """Add track to playlist"""
 
     def __init__(self, playlist_repository, user_repository, spotify_client=None):
         self.playlist_repository = playlist_repository
@@ -65,11 +57,9 @@ class AddTrackToPlaylistUseCase:
             playlist_id: str,
             spotify_track_id: str
     ) -> Dict[str, Any]:
-        """Add track to playlist"""
         if not spotify_track_id or len(spotify_track_id.strip()) < 1:
             raise ValidationError("Track ID is required")
 
-        # Check playlist exists and user has access
         playlist = await self.playlist_repository.get_by_id(playlist_id)
         if not playlist:
             raise ValidationError("Playlist not found")
@@ -77,7 +67,6 @@ class AddTrackToPlaylistUseCase:
         if not check_playlist_access(playlist, user_id):
             raise AuthenticationError("You don't have permission to modify this playlist")
 
-        # Get track details if spotify_client is provided
         track_name = None
         track_artist = None
         track_image_url = None
@@ -91,14 +80,12 @@ class AddTrackToPlaylistUseCase:
                     track_name = track_info.get("name")
                     track_artist = track_info.get("artist")
                     track_image_url = track_info.get("image")
-                    # Store genres as JSON string
                     genres = track_info.get("genres", [])
                     if genres:
                         track_genres = json.dumps(genres)
             except Exception as e:
                 logger.warning(f"Could not fetch track details: {str(e)}")
 
-        # Add track to playlist
         try:
             track = await self.playlist_repository.add_track(
                 playlist_id=playlist_id,
@@ -138,24 +125,31 @@ class CreateSpotifyPlaylistUseCase:
             name: str,
             description: str = ""
     ) -> Dict[str, Any]:
-        """Create playlist in Spotify"""
         try:
-            # Get user's Spotify access token
             user = await self.user_repository.get_by_id(user_id)
             if not user or not user.access_token:
                 raise AuthenticationError("Spotify account not linked")
 
-            # Create playlist in Spotify
-            spotify_playlist = await self.spotify_client.create_playlist(
-                access_token=user.access_token,
-                name=name,
-                description=description or "Created with Spotify Playlist Generator"
-            )
+            token = user.access_token
+            try:
+                spotify_playlist = await self.spotify_client.create_playlist(
+                    access_token=token,
+                    name=name,
+                    description=description or "Created with Spotify Playlist Generator",
+                )
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code != 401:
+                    raise ValidationError("Failed to create Spotify playlist")
+                token = await refresh_spotify_token(user, self.spotify_client, self.user_repository)
+                spotify_playlist = await self.spotify_client.create_playlist(
+                    access_token=token,
+                    name=name,
+                    description=description or "Created with Spotify Playlist Generator",
+                )
 
             if not spotify_playlist:
                 raise ValidationError("Failed to create Spotify playlist")
 
-            # Update local playlist with Spotify ID
             spotify_id = spotify_playlist.get('id')
             await self.playlist_repository.update_spotify_id(playlist_id, spotify_id)
 
@@ -166,6 +160,8 @@ class CreateSpotifyPlaylistUseCase:
                 "url": spotify_playlist.get('external_urls', {}).get('spotify', '')
             }
         except AuthenticationError:
+            raise
+        except ValidationError:
             raise
         except Exception as e:
             logger.error(f"Error creating Spotify playlist: {str(e)}")
@@ -185,14 +181,11 @@ class SyncTracksToSpotifyUseCase:
             user_id: str,
             playlist_id: str
     ) -> Dict[str, Any]:
-        """Sync all tracks in local playlist to Spotify"""
         try:
-            # Get user's Spotify access token
             user = await self.user_repository.get_by_id(user_id)
             if not user or not user.access_token:
                 raise AuthenticationError("Spotify account not linked")
 
-            # Get playlist with tracks
             playlist = await self.playlist_repository.get_by_id(playlist_id)
             if not playlist:
                 raise ValidationError("Playlist not found")
@@ -203,7 +196,6 @@ class SyncTracksToSpotifyUseCase:
             if not playlist.spotify_id:
                 raise ValidationError("Playlist is not linked to Spotify. Create it in Spotify first.")
 
-            # Collect all track IDs
             track_ids = [track.spotify_track_id for track in playlist.tracks]
 
             if not track_ids:
@@ -213,12 +205,22 @@ class SyncTracksToSpotifyUseCase:
                     "synced_count": 0
                 }
 
-            # Add tracks to Spotify playlist
-            result = await self.spotify_client.add_tracks_to_playlist(
-                access_token=user.access_token,
-                playlist_id=playlist.spotify_id,
-                track_ids=track_ids
-            )
+            token = user.access_token
+            try:
+                await self.spotify_client.add_tracks_to_playlist(
+                    access_token=token,
+                    playlist_id=playlist.spotify_id,
+                    track_ids=track_ids,
+                )
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code != 401:
+                    raise ValidationError("Failed to sync tracks to Spotify")
+                token = await refresh_spotify_token(user, self.spotify_client, self.user_repository)
+                await self.spotify_client.add_tracks_to_playlist(
+                    access_token=token,
+                    playlist_id=playlist.spotify_id,
+                    track_ids=track_ids,
+                )
 
             return {
                 "status": "success",
@@ -228,13 +230,14 @@ class SyncTracksToSpotifyUseCase:
             }
         except AuthenticationError:
             raise
+        except ValidationError:
+            raise
         except Exception as e:
             logger.error(f"Error syncing tracks to Spotify: {str(e)}")
             raise ValidationError(f"Failed to sync tracks: {str(e)}")
 
 
 class InviteCollaboratorUseCase:
-    """Invite a collaborator to playlist"""
 
     def __init__(self, playlist_repository, user_repository):
         self.playlist_repository = playlist_repository
@@ -246,11 +249,9 @@ class InviteCollaboratorUseCase:
             playlist_id: str,
             search_query: str
     ) -> Dict[str, Any]:
-        """Invite collaborator by email or username"""
         if not search_query or len(search_query.strip()) < 1:
             raise ValidationError("Email or username is required")
 
-        # Check playlist exists and user is owner
         playlist = await self.playlist_repository.get_by_id(playlist_id)
         if not playlist:
             raise ValidationError("Playlist not found")
@@ -258,7 +259,6 @@ class InviteCollaboratorUseCase:
         if playlist.owner_id != user_id:
             raise AuthenticationError("Only playlist owner can invite collaborators")
 
-        # Search for user by email or username
         search_query = search_query.strip()
         target_user = None
 
@@ -273,7 +273,6 @@ class InviteCollaboratorUseCase:
         if target_user.id == user_id:
             raise ValidationError("Cannot invite yourself to playlist")
 
-        # Add collaborator
         success = await self.playlist_repository.add_collaborator(playlist_id, target_user.id)
 
         if not success:
@@ -287,15 +286,12 @@ class InviteCollaboratorUseCase:
 
 
 class GetPlaylistCollaboratorsUseCase:
-    """Get all collaborators for a playlist"""
 
     def __init__(self, playlist_repository, user_repository):
         self.playlist_repository = playlist_repository
         self.user_repository = user_repository
 
     async def execute(self, user_id: str, playlist_id: str) -> List[Dict[str, Any]]:
-        """Get collaborators for playlist (including owner)"""
-        # Check playlist exists and user has access
         playlist = await self.playlist_repository.get_by_id(playlist_id)
         if not playlist:
             raise ValidationError("Playlist not found")
@@ -303,16 +299,11 @@ class GetPlaylistCollaboratorsUseCase:
         if not check_playlist_access(playlist, user_id):
             raise AuthenticationError("You don't have access to this playlist")
 
-        # Get owner
         owner = await self.user_repository.get_by_id(playlist.owner_id)
-
-        # Get other collaborators
         collaborators = await self.playlist_repository.get_collaborators(playlist_id)
 
-        # Combine owner with collaborators
         all_members = []
 
-        # Add owner first
         if owner:
             all_members.append({
                 "id": owner.id,
@@ -321,7 +312,6 @@ class GetPlaylistCollaboratorsUseCase:
                 "is_owner": True
             })
 
-        # Add collaborators
         for collab in collaborators:
             all_members.append({
                 "id": collab.id,
@@ -334,7 +324,6 @@ class GetPlaylistCollaboratorsUseCase:
 
 
 class RemoveCollaboratorUseCase:
-    """Remove collaborator from playlist"""
 
     def __init__(self, playlist_repository):
         self.playlist_repository = playlist_repository
@@ -345,8 +334,6 @@ class RemoveCollaboratorUseCase:
             playlist_id: str,
             collaborator_id: str
     ) -> Dict[str, Any]:
-        """Remove collaborator from playlist"""
-        # Check playlist exists and user is owner
         playlist = await self.playlist_repository.get_by_id(playlist_id)
         if not playlist:
             raise ValidationError("Playlist not found")
@@ -354,7 +341,6 @@ class RemoveCollaboratorUseCase:
         if playlist.owner_id != user_id:
             raise AuthenticationError("Only playlist owner can remove collaborators")
 
-        # Remove collaborator
         success = await self.playlist_repository.remove_collaborator(playlist_id, collaborator_id)
 
         if not success:
@@ -390,7 +376,6 @@ class GetPlaylistStateUseCase:
             last_snapshot_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Get playlist state, optionally only if changed from last_snapshot_id"""
-        # Check playlist exists and user has access
         playlist = await self.playlist_repository.get_by_id(playlist_id)
         if not playlist:
             raise ValidationError("Playlist not found")
@@ -398,10 +383,8 @@ class GetPlaylistStateUseCase:
         if not check_playlist_access(playlist, user_id):
             raise AuthenticationError("You don't have access to this playlist")
 
-        # Generate current snapshot
         current_snapshot_id = self._generate_snapshot_id(playlist)
 
-        # If client has same snapshot, return minimal response
         if last_snapshot_id and last_snapshot_id == current_snapshot_id:
             return {
                 "changed": False,
@@ -409,7 +392,6 @@ class GetPlaylistStateUseCase:
                 "playlist": None
             }
 
-        # Return full state if changed or no snapshot provided
         return {
             "changed": True,
             "snapshot_id": current_snapshot_id,
@@ -436,7 +418,6 @@ class GetPlaylistStateUseCase:
 
 
 class DeleteTrackFromPlaylistUseCase:
-    """Delete track from playlist"""
 
     def __init__(self, playlist_repository):
         self.playlist_repository = playlist_repository
@@ -447,8 +428,6 @@ class DeleteTrackFromPlaylistUseCase:
             playlist_id: str,
             track_id: str
     ) -> Dict[str, Any]:
-        """Delete track from playlist"""
-        # Check playlist exists and user has access
         playlist = await self.playlist_repository.get_by_id(playlist_id)
         if not playlist:
             raise ValidationError("Playlist not found")
@@ -456,12 +435,10 @@ class DeleteTrackFromPlaylistUseCase:
         if not check_playlist_access(playlist, user_id):
             raise AuthenticationError("You don't have permission to modify this playlist")
 
-        # Check track exists in playlist
         track = next((t for t in (playlist.tracks or []) if t.id == track_id), None)
         if not track:
             raise ValidationError("Track not found in playlist")
 
-        # Delete track
         success = await self.playlist_repository.remove_track(track_id)
 
         if not success:
@@ -471,7 +448,6 @@ class DeleteTrackFromPlaylistUseCase:
 
 
 class DeletePlaylistUseCase:
-    """Delete entire playlist"""
 
     def __init__(self, playlist_repository):
         self.playlist_repository = playlist_repository
@@ -481,20 +457,16 @@ class DeletePlaylistUseCase:
             user_id: str,
             playlist_id: str
     ) -> Dict[str, Any]:
-        """Delete playlist (only owner can delete)"""
-        # Check playlist exists and user is owner
         playlist = await self.playlist_repository.get_by_id(playlist_id)
         if not playlist:
             raise ValidationError("Playlist not found")
 
-        # Delete playlist
         success = await self.playlist_repository.delete(playlist_id)
 
         return {"status": "success", "deleted_playlist_id": playlist_id}
 
 
 class FindBridgeArtistsUseCase:
-    """Find bridge artists between collaborators' tastes"""
 
     def __init__(self, lastfm_client, playlist_repository, user_repository, bridge_artist_repository=None):
         self.lastfm_client = lastfm_client
@@ -516,7 +488,6 @@ class FindBridgeArtistsUseCase:
         """
         import asyncio
 
-        # Check playlist exists and user has access
         playlist = await self.playlist_repository.get_by_id(playlist_id)
         if not playlist:
             raise ValidationError("Playlist not found")
@@ -524,23 +495,18 @@ class FindBridgeArtistsUseCase:
         if not check_playlist_access(playlist, user_id):
             raise AuthenticationError("You don't have access to this playlist")
 
-        # Try to get cached bridge artists
         if use_cache and self.bridge_artist_repository:
             cached = await self.bridge_artist_repository.get_bridge_artists(playlist_id)
             if cached:
                 logger.info(f"Using cached bridge artists for playlist {playlist_id}")
                 return cached[:limit]
 
-        # Calculate bridge artists
-
-        # Get all collaborators (owner + collaborators)
         owner = await self.user_repository.get_by_id(playlist.owner_id)
         collaborators = await self.playlist_repository.get_collaborators(playlist_id)
 
         all_users = [owner] + collaborators
         users_artists = []
 
-        # Collect top artists from all collaborators
         for user in all_users:
             if not user.top_artists:
                 logger.warning(f"User {user.id} has no top artists recorded")
@@ -555,12 +521,10 @@ class FindBridgeArtistsUseCase:
         if not users_artists:
             raise ValidationError("No collaborators with top artists available")
 
-        # Get all known artists
         known_artists = set()
         for user_artists in users_artists:
             known_artists.update(user_artists)
 
-        # Fetch similar artists for each user's artists
         user_similar_maps = []
         for user_artists in users_artists:
             similar_map = {}
@@ -573,7 +537,6 @@ class FindBridgeArtistsUseCase:
 
             user_similar_maps.append(similar_map)
 
-        # Calculate bridge scores using harmonic mean
         all_candidates = set()
         for similar_map in user_similar_maps:
             all_candidates.update(similar_map.keys())
@@ -588,7 +551,7 @@ class FindBridgeArtistsUseCase:
                 n = len(scores_per_user)
                 harmonic = n / sum(1 / s for s in scores_per_user)
             else:
-                # Some users don't know this artist
+                # Some users don't know this artist — weight by coverage squared
                 non_zero = [s for s in scores_per_user if s > 0]
                 if not non_zero:
                     continue
@@ -601,10 +564,8 @@ class FindBridgeArtistsUseCase:
 
             bridge_scores[artist] = harmonic
 
-        # Sort by score and return top N
         result = sorted(bridge_scores.items(), key=lambda x: x[1], reverse=True)[:limit]
 
-        # Cache the results
         if self.bridge_artist_repository:
             try:
                 await self.bridge_artist_repository.save_bridge_artists(playlist_id, result)
@@ -615,7 +576,6 @@ class FindBridgeArtistsUseCase:
 
 
 class GeneratePlaylistFromBridgeUseCase:
-    """Generate playlist using bridge artists and Last.fm tracks"""
 
     def __init__(self, spotify_client, lastfm_client, playlist_repository, user_repository):
         self.spotify_client = spotify_client
@@ -666,7 +626,6 @@ class GeneratePlaylistFromBridgeUseCase:
         if quantity < 5 or quantity > 30:
             raise ValidationError("Quantity must be between 5 and 30")
 
-        # Check playlist exists and user has access
         playlist = await self.playlist_repository.get_by_id(playlist_id)
         if not playlist:
             raise ValidationError("Playlist not found")
@@ -674,25 +633,22 @@ class GeneratePlaylistFromBridgeUseCase:
         if not check_playlist_access(playlist, user_id):
             raise AuthenticationError("You don't have access to modify this playlist")
 
-        # Get user's Spotify token
         user = await self.user_repository.get_by_id(user_id)
         if not user or not user.access_token:
             raise AuthenticationError("Spotify account not linked")
+        spotify_token = user.access_token
 
-        # Find bridge artists
         bridge_use_case = FindBridgeArtistsUseCase(self.lastfm_client, self.playlist_repository, self.user_repository)
         bridge_artists = await bridge_use_case.execute(user_id, playlist_id, limit=20)
 
         if not bridge_artists:
             raise ValidationError("Could not find bridge artists")
 
-        # Extract artist names and scores
         artist_names = [artist[0] for artist in bridge_artists]
         artist_scores = {artist[0]: artist[1] for artist in bridge_artists}
 
         logger.info(f"Found {len(artist_names)} bridge artists for playlist {playlist_id}")
 
-        # Get mixed tracks (60% top + 40% random) from Last.fm for each bridge artist
         tracks_by_artist = {}
         tasks = [self.lastfm_client.get_mixed_tracks(artist, limit=6) for artist in artist_names]
         results = await asyncio.gather(*tasks)
@@ -706,7 +662,6 @@ class GeneratePlaylistFromBridgeUseCase:
         if not tracks_by_artist:
             raise ValidationError("Could not find tracks from bridge artists")
 
-        # Apply artist quota limits (1-4 tracks per artist based on score)
         limited_tracks = self._limit_tracks_per_artist(
             tracks_by_artist,
             artist_scores,
@@ -717,7 +672,6 @@ class GeneratePlaylistFromBridgeUseCase:
 
         logger.info(f"Limited to {len(limited_tracks)} total tracks across artists")
 
-        # Search for tracks on Spotify and add to playlist
         added_tracks = []
 
         for track_candidate in limited_tracks:
@@ -725,13 +679,22 @@ class GeneratePlaylistFromBridgeUseCase:
                 break
 
             try:
-                # Search for track on Spotify
                 query = f"{track_candidate['title']} {track_candidate['artist']}"
-                search_results = await self.spotify_client.search_tracks(
-                    access_token=user.access_token,
-                    query=query,
-                    limit=1
-                )
+                try:
+                    search_results = await self.spotify_client.search_tracks(
+                        access_token=spotify_token,
+                        query=query,
+                        limit=1,
+                    )
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code != 401:
+                        raise
+                    spotify_token = await refresh_spotify_token(user, self.spotify_client, self.user_repository)
+                    search_results = await self.spotify_client.search_tracks(
+                        access_token=spotify_token,
+                        query=query,
+                        limit=1,
+                    )
 
                 if not search_results:
                     logger.debug(f"Track not found on Spotify: {query}")
@@ -743,7 +706,6 @@ class GeneratePlaylistFromBridgeUseCase:
                 track_artist = track.get("artist")
                 track_image_url = track.get("image")
 
-                # Add track to playlist
                 added_track = await self.playlist_repository.add_track(
                     playlist_id=playlist_id,
                     spotify_track_id=spotify_track_id,

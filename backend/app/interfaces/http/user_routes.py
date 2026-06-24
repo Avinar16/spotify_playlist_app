@@ -1,4 +1,3 @@
-"""User preferences routes"""
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
@@ -15,7 +14,6 @@ router = APIRouter(prefix="/api/user", tags=["user"])
 
 
 async def get_current_user_id(authorization: Optional[str] = Header(None)) -> str:
-    """Extract user_id from Authorization header"""
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -49,7 +47,6 @@ async def refresh_favorite_genres(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
-    """Fetch and save user's favorite genres from Spotify top tracks"""
     try:
         user_repo = UserRepository(db)
         spotify_client = SpotifyClient()
@@ -74,7 +71,6 @@ async def get_favorite_genres(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get user's saved favorite genres"""
     try:
         user_repo = UserRepository(db)
         use_case = GetUserGenresUseCase(user_repo)

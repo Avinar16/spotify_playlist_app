@@ -1,4 +1,4 @@
-"""Spotify OAuth routes"""
+import html
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
@@ -41,7 +41,6 @@ class SpotifyAccountResponse(BaseModel):
 async def get_spotify_auth_url(
     user_id: str = Depends(get_current_user_id),
 ):
-    """Get Spotify authorization URL with PKCE"""
     try:
         use_case = GenerateSpotifyAuthUrlUseCase(settings)
         result = use_case.execute()
@@ -56,9 +55,8 @@ async def get_spotify_auth_url(
 
 @router.get("/callback")
 async def spotify_callback(code: str = None, error: str = None, state: str = None):
-    """Spotify OAuth callback - redirects back to frontend callback page"""
     if error:
-        # Redirect to frontend callback with error
+        safe_error = html.escape(error, quote=True)
         return HTMLResponse(f"""
         <html>
             <head><title>Spotify Auth</title></head>
@@ -66,16 +64,16 @@ async def spotify_callback(code: str = None, error: str = None, state: str = Non
                 <script>
                     window.opener.postMessage({{
                         type: 'SPOTIFY_AUTH_ERROR',
-                        error: '{error}'
+                        error: '{safe_error}'
                     }}, '*');
                     window.close();
                 </script>
             </body>
         </html>
         """)
-    
+
     if code:
-        # Redirect to frontend callback with code
+        safe_code = html.escape(code, quote=True)
         return HTMLResponse(f"""
         <html>
             <head><title>Spotify Auth</title></head>
@@ -83,7 +81,7 @@ async def spotify_callback(code: str = None, error: str = None, state: str = Non
                 <script>
                     window.opener.postMessage({{
                         type: 'SPOTIFY_AUTH_CODE',
-                        code: '{code}'
+                        code: '{safe_code}'
                     }}, '*');
                     window.close();
                 </script>
@@ -102,23 +100,20 @@ async def link_spotify_account(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Link Spotify account to user profile"""
     try:
         user_repository = UserRepository(db)
         spotify_client = SpotifyClient()
         use_case = LinkSpotifyAccountUseCase(user_repository, spotify_client)
-        
+
         result = await use_case.execute(
             user_id=user_id,
             code=request.code,
             code_verifier=request.code_verifier,
         )
-        
-        # Capture top artists after successful link
+
         capture_artists = CaptureUserTopArtistsUseCase(spotify_client, user_repository)
         await capture_artists.execute(user_id)
-        
-        # Ensure commit
+
         await db.commit()
         
         return SpotifyAccountResponse(**result)
@@ -148,7 +143,6 @@ async def unlink_spotify_account(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Unlink Spotify account from user profile"""
     try:
         user_repository = UserRepository(db)
         use_case = UnlinkSpotifyAccountUseCase(user_repository)

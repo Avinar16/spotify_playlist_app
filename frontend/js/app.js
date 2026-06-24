@@ -137,6 +137,15 @@ class App {
             if (actionElement?.dataset.action === 'delete-playlist') {
                 await this.deletePlaylist(actionElement.dataset.playlistId);
             }
+            if (actionElement?.dataset.action === 'edit-playlist-name') {
+                this.startEditPlaylistName(actionElement.dataset.playlistId);
+            }
+            if (actionElement?.dataset.action === 'save-playlist-name') {
+                await this.savePlaylistName(actionElement.dataset.playlistId);
+            }
+            if (actionElement?.dataset.action === 'cancel-playlist-name') {
+                this.cancelEditPlaylistName(actionElement.dataset.playlistId);
+            }
             if (actionElement?.dataset.action === 'close-invite-modal') {
                 ui.closeInviteModal();
             }
@@ -680,6 +689,54 @@ class App {
         } finally {
             ui.showLoading(false);
         }
+    }
+
+    startEditPlaylistName(playlistId) {
+        const card = document.querySelector(`.playlist-card[data-playlist-id="${playlistId}"]`);
+        if (!card) return;
+        const titleRow = card.querySelector('.playlist-title-row');
+        const currentName = card.querySelector('.playlist-title').textContent;
+        titleRow.innerHTML = `
+            <input class="playlist-name-input" value="${currentName.replace(/"/g, '&quot;')}" data-playlist-id="${playlistId}" maxlength="100" />
+            <button class="btn-icon-confirm" data-action="save-playlist-name" data-playlist-id="${playlistId}" title="Save">✓</button>
+            <button class="btn-icon-cancel" data-action="cancel-playlist-name" data-playlist-id="${playlistId}" title="Cancel">✕</button>
+        `;
+        const input = titleRow.querySelector('.playlist-name-input');
+        input.focus();
+        input.select();
+        input.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter') await this.savePlaylistName(playlistId);
+            if (e.key === 'Escape') this.cancelEditPlaylistName(playlistId);
+        });
+    }
+
+    async savePlaylistName(playlistId) {
+        const card = document.querySelector(`.playlist-card[data-playlist-id="${playlistId}"]`);
+        if (!card) return;
+        const input = card.querySelector('.playlist-name-input');
+        if (!input) return;
+        const newName = input.value.trim();
+        if (!newName) {
+            ui.showError('Playlist name cannot be empty');
+            return;
+        }
+        try {
+            ui.showLoading(true);
+            await api.updatePlaylist(playlistId, newName);
+            const playlist = this.playlists.find(p => p.id === playlistId);
+            if (playlist) playlist.name = newName;
+            ui.renderPlaylists(this.playlists);
+            ui.showSuccess('Playlist renamed!');
+        } catch (error) {
+            ui.showError(`Failed to rename: ${error.message}`);
+            ui.renderPlaylists(this.playlists);
+        } finally {
+            ui.showLoading(false);
+        }
+    }
+
+    cancelEditPlaylistName(playlistId) {
+        ui.renderPlaylists(this.playlists);
     }
 
     async loadUserGenres() {

@@ -1,10 +1,10 @@
 from datetime import datetime
 from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Table, Boolean, Float
 from sqlalchemy.orm import declarative_base, relationship
+from app.infrastructure.database.encrypted_type import EncryptedText
 
 Base = declarative_base()
 
-# Association table for playlist collaborators
 playlist_collaborators = Table(
     'playlist_collaborators',
     Base.metadata,
@@ -21,10 +21,10 @@ class UserModel(Base):
     username = Column(String(255), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=True)  # Optional for OAuth users
     spotify_id = Column(String(255), unique=True, nullable=True, index=True)
-    access_token = Column(Text, nullable=True)
-    refresh_token = Column(Text, nullable=True)
-    favorite_genres = Column(Text, nullable=True)  # JSON array of favorite genres
-    top_artists = Column(Text, nullable=True)  # JSON array of top artist names from Spotify
+    access_token = Column(EncryptedText, nullable=True)
+    refresh_token = Column(EncryptedText, nullable=True)
+    favorite_genres = Column(Text, nullable=True)
+    top_artists = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -43,7 +43,7 @@ class PlaylistModel(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     owner_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
-    spotify_id = Column(String(255), nullable=True, unique=True, index=True)  # Spotify playlist ID
+    spotify_id = Column(String(255), nullable=True, unique=True, index=True)
     snapshot_id = Column(String(255), nullable=True)  # For collaborative editing
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -79,8 +79,8 @@ class PlaylistTrackModel(Base):
     spotify_track_id = Column(String(255), nullable=False)
     track_name = Column(String(255), nullable=True)
     track_artist = Column(String(255), nullable=True)
-    track_image_url = Column(Text, nullable=True)  # Album cover image
-    track_genres = Column(Text, nullable=True)  # JSON array of genres stored as string
+    track_image_url = Column(Text, nullable=True)
+    track_genres = Column(Text, nullable=True)
     added_by_id = Column(String(36), ForeignKey('users.id'), nullable=False)
     added_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
