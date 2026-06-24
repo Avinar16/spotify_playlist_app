@@ -16,6 +16,14 @@ services:
       timeout: 5s
       retries: 5
 
+  singbox:
+    image: ghcr.io/sagernet/sing-box:latest
+    container_name: singbox
+    restart: unless-stopped
+    volumes:
+      - ./singbox/config.json:/etc/sing-box/config.json:ro
+    command: ["run", "-c", "/etc/sing-box/config.json"]
+
   backend:
     build:
       context: ./backend
@@ -23,11 +31,16 @@ services:
     container_name: spotify_backend
     env_file:
       - .env
+    environment:
+      - HTTPS_PROXY=http://singbox:2080
+      - HTTP_PROXY=http://singbox:2080
     ports:
       - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
+      singbox:
+        condition: service_started
     volumes:
       - ./backend:/app
     command: python main.py

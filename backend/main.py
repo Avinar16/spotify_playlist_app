@@ -1,3 +1,15 @@
+# === PROXY PATCH ===
+import os, httpx
+
+_original_init = httpx.AsyncClient.__init__
+def _patched_init(self, *args, **kwargs):
+    if "proxy" not in kwargs and "proxies" not in kwargs:
+        proxy_url = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
+        if proxy_url:
+            kwargs["proxies"] = {"https://": proxy_url, "http://": proxy_url}
+    _original_init(self, *args, **kwargs)
+httpx.AsyncClient.__init__ = _patched_init
+# === END PROXY PATCH ===
 import asyncio
 import logging
 from contextlib import asynccontextmanager
