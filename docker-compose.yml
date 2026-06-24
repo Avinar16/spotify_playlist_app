@@ -34,19 +34,14 @@ services:
     environment:
       - HTTPS_PROXY=http://singbox:2080
       - HTTP_PROXY=http://singbox:2080
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     depends_on:
       postgres:
         condition: service_healthy
       singbox:
         condition: service_started
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
-    expose:
-      - "8000"
-    volumes:
-      - ./backend:/app
-    command: python main.py
 
   nginx:
     image: nginx:alpine
