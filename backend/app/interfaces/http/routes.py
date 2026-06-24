@@ -18,6 +18,7 @@ from app.use_cases.playlists import (
     DeletePlaylistUseCase,
 )
 from app.core.exceptions import AuthenticationError, ValidationError
+from pydantic import BaseModel
 import uuid
 import logging
 from typing import Optional
@@ -28,14 +29,12 @@ router = APIRouter()
 
 @router.get("/api/health", response_model=HealthResponse)
 async def health_check(db: AsyncSession = Depends(get_db)):
-    """Health check endpoint with DB connectivity test"""
     try:
-        # Test DB connection
         await db.execute(select(1))
         db_status = "connected"
     except Exception as e:
         db_status = f"error: {str(e)}"
-    
+
     return HealthResponse(
         status="ok",
         message="Server is running",
@@ -45,12 +44,11 @@ async def health_check(db: AsyncSession = Depends(get_db)):
 
 @router.get("/api/playlists", response_model=list[PlaylistResponse])
 async def list_playlists(
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db)
+        user_id: str = Depends(get_current_user_id),
+        db: AsyncSession = Depends(get_db)
 ):
-    """List playlists for current user (owned or collaborated)"""
     from app.infrastructure.database.playlist_repository import PlaylistRepository
-    
+
     playlist_repository = PlaylistRepository(db)
     playlists = await playlist_repository.get_by_user_id(user_id)
     return playlists
@@ -58,11 +56,10 @@ async def list_playlists(
 
 @router.post("/api/playlists", response_model=PlaylistResponse)
 async def create_playlist(
-    playlist: PlaylistCreate,
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db)
+        playlist: PlaylistCreate,
+        user_id: str = Depends(get_current_user_id),
+        db: AsyncSession = Depends(get_db)
 ):
-    """Create a new playlist"""
     new_playlist = PlaylistModel(
         id=str(uuid.uuid4()),
         name=playlist.name,
@@ -76,54 +73,72 @@ async def create_playlist(
     return new_playlist
 
 
+class PlaylistUpdate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+@router.patch("/api/playlists/{playlist_id}", response_model=PlaylistResponse)
+async def update_playlist(
+        playlist_id: str,
+        update: PlaylistUpdate,
+        user_id: str = Depends(get_current_user_id),
+        db: AsyncSession = Depends(get_db)
+):
+    playlist_repository = PlaylistRepository(db)
+    playlist = await playlist_repository.get_by_id(playlist_id)
+
+    if not playlist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
+    if playlist.owner_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owner can rename the playlist")
+
+    name = update.name.strip()
+    if not name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Playlist name cannot be empty")
+
+    updated = await playlist_repository.update_name(playlist_id, name, update.description)
+    return updated
 
 
 @router.get("/api/playlists/{playlist_id}", response_model=PlaylistResponse)
 async def get_playlist(
-    playlist_id: str,
-    db: AsyncSession = Depends(get_db)
+        playlist_id: str,
+        user_id: str = Depends(get_current_user_id),
+        db: AsyncSession = Depends(get_db)
 ):
-    """Get a specific playlist"""
-    result = await db.execute(
-        select(PlaylistModel).where(PlaylistModel.id == playlist_id)
-    )
-    playlist = result.scalar_one_or_none()
-    
+    playlist_repository = PlaylistRepository(db)
+    playlist = await playlist_repository.get_by_id(playlist_id)
+
     if not playlist:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Playlist not found"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
+
+    if playlist.owner_id != user_id and not any(c.id == user_id for c in playlist.collaborators):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
     return playlist
 
 
 @router.get("/api/playlists/{playlist_id}/tracks", response_model=list[PlaylistTrackResponse])
 async def get_playlist_tracks(
-    playlist_id: str,
-    db: AsyncSession = Depends(get_db)
+        playlist_id: str,
+        user_id: str = Depends(get_current_user_id),
+        db: AsyncSession = Depends(get_db)
 ):
-    """Get tracks for a playlist"""
-    from sqlalchemy.orm import selectinload
-    result = await db.execute(
-        select(PlaylistModel)
-        .where(PlaylistModel.id == playlist_id)
-        .options(selectinload(PlaylistModel.tracks))
-    )
-    playlist = result.unique().scalar_one_or_none()
-    
+    playlist_repository = PlaylistRepository(db)
+    playlist = await playlist_repository.get_by_id(playlist_id)
+
     if not playlist:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Playlist not found"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
+
+    if playlist.owner_id != user_id and not any(c.id == user_id for c in playlist.collaborators):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
     return playlist.tracks or []
 
 
 @router.get("/api/test-data")
 async def test_data():
-    """Test endpoint to verify API is responding"""
     return {
         "message": "API is working!",
         "status": "success",
@@ -136,22 +151,22 @@ async def test_data():
 
 @router.get("/api/playlists/{playlist_id}/state")
 async def get_playlist_state(
-    playlist_id: str,
-    last_snapshot_id: Optional[str] = None,
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db)
+        playlist_id: str,
+        last_snapshot_id: Optional[str] = None,
+        user_id: str = Depends(get_current_user_id),
+        db: AsyncSession = Depends(get_db)
 ):
     """Get playlist state with snapshot_id for real-time sync"""
     try:
         playlist_repository = PlaylistRepository(db)
         use_case = GetPlaylistStateUseCase(playlist_repository)
-        
+
         result = await use_case.execute(
             user_id=user_id,
             playlist_id=playlist_id,
             last_snapshot_id=last_snapshot_id
         )
-        
+
         return result
     except AuthenticationError as e:
         raise HTTPException(
@@ -173,22 +188,21 @@ async def get_playlist_state(
 
 @router.delete("/api/playlists/{playlist_id}/tracks/{track_id}")
 async def delete_track_from_playlist(
-    playlist_id: str,
-    track_id: str,
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db)
+        playlist_id: str,
+        track_id: str,
+        user_id: str = Depends(get_current_user_id),
+        db: AsyncSession = Depends(get_db)
 ):
-    """Delete track from playlist"""
     try:
         playlist_repository = PlaylistRepository(db)
         use_case = DeleteTrackFromPlaylistUseCase(playlist_repository)
-        
+
         result = await use_case.execute(
             user_id=user_id,
             playlist_id=playlist_id,
             track_id=track_id
         )
-        
+
         return result
     except AuthenticationError as e:
         raise HTTPException(
@@ -209,20 +223,19 @@ async def delete_track_from_playlist(
 
 @router.delete("/api/playlists/{playlist_id}")
 async def delete_playlist(
-    playlist_id: str,
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db)
+        playlist_id: str,
+        user_id: str = Depends(get_current_user_id),
+        db: AsyncSession = Depends(get_db)
 ):
-    """Delete entire playlist (owner only)"""
     try:
         playlist_repository = PlaylistRepository(db)
         use_case = DeletePlaylistUseCase(playlist_repository)
-        
+
         result = await use_case.execute(
             user_id=user_id,
             playlist_id=playlist_id
         )
-        
+
         return result
     except AuthenticationError as e:
         raise HTTPException(

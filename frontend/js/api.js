@@ -69,6 +69,13 @@ export class APIClient {
         });
     }
 
+    async patch(endpoint, data) {
+        return this.request(endpoint, {
+            method: 'PATCH',
+            body: JSON.stringify(data),
+        });
+    }
+
     async delete(endpoint) {
         return this.request(endpoint, { method: 'DELETE' });
     }
@@ -96,7 +103,7 @@ export class APIClient {
     }
 
     async addTrackToPlaylist(playlistId, spotifyTrackId) {
-        return this.post(`/playlist/${playlistId}/add-track`, { spotify_track_id: spotifyTrackId });
+        return this.patch(`/playlist/${playlistId}/tracks`, { spotify_track_id: spotifyTrackId });
     }
 
     async createPlaylistOnSpotify(playlistId, name, description = '') {
@@ -121,6 +128,10 @@ export class APIClient {
 
     async deletePlaylist(playlistId) {
         return this.delete(`/playlists/${playlistId}`);
+    }
+
+    async updatePlaylist(playlistId, name, description = null) {
+        return this.patch(`/playlists/${playlistId}`, { name, description });
     }
 
     // Health check

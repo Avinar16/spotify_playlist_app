@@ -1,4 +1,3 @@
-"""Playlist management routes"""
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,7 +80,6 @@ class BridgeArtistResponse(BaseModel):
 
 
 class BridgeArtistsWithCollaboratorsResponse(BaseModel):
-    """Response with bridge artists and collaborator info"""
     bridge_artists: List[BridgeArtistResponse]
     collaborators: List[Dict[str, Any]]  # {id, username, top_artists: [str]}
 
@@ -99,7 +97,6 @@ async def generate_playlist(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate and add tracks to playlist based on bridge artists"""
     try:
         playlist_repository = PlaylistRepository(db)
         user_repository = UserRepository(db)
@@ -141,7 +138,6 @@ async def search_tracks(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Search for tracks on Spotify"""
     try:
         user_repository = UserRepository(db)
         spotify_client = SpotifyClient()
@@ -174,14 +170,13 @@ async def search_tracks(
         )
 
 
-@router.post("/{playlist_id}/add-track", response_model=TrackInPlaylistResponse)
+@router.patch("/{playlist_id}/tracks", response_model=TrackInPlaylistResponse)
 async def add_track_to_playlist(
     playlist_id: str,
     request: AddTrackRequest,
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Add track to playlist"""
     try:
         playlist_repository = PlaylistRepository(db)
         user_repository = UserRepository(db)
@@ -302,7 +297,6 @@ async def get_playlist_collaborators(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all collaborators for a playlist"""
     try:
         playlist_repository = PlaylistRepository(db)
         user_repository = UserRepository(db)
@@ -341,7 +335,6 @@ async def invite_collaborator(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Invite a collaborator to playlist"""
     try:
         playlist_repository = PlaylistRepository(db)
         user_repository = UserRepository(db)
@@ -381,7 +374,6 @@ async def remove_collaborator(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Remove collaborator from playlist"""
     try:
         playlist_repository = PlaylistRepository(db)
         use_case = RemoveCollaboratorUseCase(playlist_repository)
@@ -431,16 +423,13 @@ async def get_bridge_artists(
         bridge_artist_repository = BridgeArtistRepository(db)
         lastfm_client = LastFmClient()
         
-        # Get playlist and check access
         playlist = await playlist_repository.get_by_id(playlist_id)
         if not playlist:
             raise ValidationError("Playlist not found")
-        
-        # Check access (owner or collaborator)
+
         if playlist.owner_id != user_id and not any(c.id == user_id for c in playlist.collaborators):
             raise AuthenticationError("You don't have access to this playlist")
-        
-        # Get cached bridge artists or calculate if needed
+
         bridge_use_case = FindBridgeArtistsUseCase(
             lastfm_client,
             playlist_repository,
@@ -449,7 +438,6 @@ async def get_bridge_artists(
         )
         bridge_artists = await bridge_use_case.execute(user_id, playlist_id, limit=20)
         
-        # Get collaborators with their top artists
         owner = await user_repository.get_by_id(playlist.owner_id)
         collaborators = await playlist_repository.get_collaborators(playlist_id)
         all_collaborators = [owner] + collaborators
@@ -470,7 +458,6 @@ async def get_bridge_artists(
                 "top_artists": top_artists
             })
         
-        # Format bridge artists response
         bridge_artists_response = [
             BridgeArtistResponse(artist_name=name, score=score)
             for name, score in bridge_artists
